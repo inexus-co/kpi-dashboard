@@ -4,7 +4,7 @@
 set -euo pipefail
 MSG="${1:?usage: git-push-retry.sh <msg> <files...>}"; shift
 ROOT="$(git rev-parse --show-toplevel)"; cd "$ROOT"
-git config user.email "rikiei.watanabe@inexus-co.com"
+git config user.email "noreply@anthropic.com"
 git config user.name "KPI Dashboard Bot"
 git add "$@"
 if git diff --cached --quiet; then echo "no changes"; exit 0; fi

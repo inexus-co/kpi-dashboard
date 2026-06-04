@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>まなんでパズル フィードバック ダッシュボード</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
+<style>
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Hiragino Kaku Gothic ProN",Meiryo,sans-serif;
+  background:#f6f7f9; color:#1f2430; font-size:14px; line-height:1.5; }
+.wrap { max-width:1180px; margin:0 auto; padding:20px 18px 60px; }
+.head { display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+h1 { font-size:20px; margin:0; font-weight:700; }
+.sub { color:#6b7280; font-size:12.5px; }
+.tabs { display:inline-flex; background:#eceef2; border-radius:10px; padding:3px; margin-top:16px; }
+.tab { border:0; background:transparent; padding:7px 18px; border-radius:8px; font-size:13px; font-weight:600; color:#5b6473; cursor:pointer; }
+.tab.active { background:#fff; color:#1f2430; box-shadow:0 1px 2px rgba(0,0,0,.08); }
+.aicard { margin-top:18px; background:linear-gradient(135deg,#f3f1ff,#eef5ff); border:1px solid #dcd9f5; border-radius:14px; padding:15px 18px; }
+.aihead { font-size:12.5px; font-weight:700; color:#5b4bd6; display:flex; align-items:center; gap:8px; }
+.aibadge { font-size:10.5px; font-weight:600; color:#6b6f86; background:#fff; border:1px solid #ddd9f0; border-radius:999px; padding:1px 8px; }
+.aicols { margin-top:10px; display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.aicol { background:#fff; border:1px solid #e4e1f2; border-radius:10px; padding:11px 14px; }
+.aicol.pro { border-left:4px solid #1f9d6b; } .aicol.con { border-left:4px solid #e0533d; }
+.aicoltitle { font-size:12px; font-weight:700; margin-bottom:6px; }
+.aicol.pro .aicoltitle { color:#1f9d6b; } .aicol.con .aicoltitle { color:#e0533d; }
+.aicol ul { margin:0; padding-left:18px; } .aicol li { font-size:13px; line-height:1.6; margin-bottom:4px; }
+@media (max-width:860px){ .aicols { grid-template-columns:1fr; } }
+.section-label { margin:28px 0 12px; font-size:13px; font-weight:700; letter-spacing:.02em; color:#374151; border-left:4px solid #f0a92b; padding-left:9px; }
+.section-label .hint { font-weight:400; color:#8a93a3; margin-left:8px; font-size:11.5px; }
+.kpis { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; margin-top:14px; }
+.kpi { background:#fff; border:1px solid #e7e9ee; border-radius:12px; padding:14px 16px; }
+.kpi .label { font-size:11.5px; color:#6b7280; }
+.kpi .val { font-size:25px; font-weight:700; margin-top:4px; }
+.kpi .val small { font-size:13px; font-weight:500; color:#9aa1ad; }
+.kpi.good .val { color:#1f9d6b; } .kpi.bad .val { color:#e0533d; }
+.grid2 { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.card { background:#fff; border:1px solid #e7e9ee; border-radius:12px; padding:14px 16px; }
+.card h3 { margin:0 0 4px; font-size:13.5px; font-weight:700; }
+.card .cap { color:#9aa1ad; font-size:11px; margin:0 0 8px; }
+.cbox { position:relative; height:230px; }
+.card.tall .cbox { height:270px; }
+table { width:100%; border-collapse:collapse; font-size:12.5px; }
+th,td { text-align:left; padding:7px 8px; border-bottom:1px solid #eef0f3; vertical-align:top; }
+th { color:#6b7280; font-weight:600; font-size:11.5px; }
+.tag { display:inline-block; padding:1px 7px; border-radius:999px; font-size:11px; background:#eef1f6; color:#4b5563; margin:0 3px 2px 0; }
+.tag.inq { background:#e8f0ff; color:#2456c4; } .tag.fb { background:#fff1e0; color:#b06408; }
+a.adm { color:#4f7cff; text-decoration:none; } a.adm:hover { text-decoration:underline; }
+.tablenote { color:#9aa1ad; font-size:11.5px; margin:0 0 8px; }
+.empty { color:#9aa1ad; padding:20px; text-align:center; }
+@media (max-width:860px){ .kpis { grid-template-columns:repeat(2,1fr); } .grid2 { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="head">
+    <div>
+      <h1>まなんでパズル フィードバック ダッシュボード</h1>
+      <div class="sub">#op-user-feedback-prod ／ 評価(1〜5)・お問い合わせ・フィードバックの集計</div>
+    </div>
+    <div class="sub" id="updated"></div>
+  </div>
+
+  <div class="tabs" id="tabs">
+    <button class="tab active" data-days="7">直近7日</button>
+    <button class="tab" data-days="30">直近30日</button>
+    <button class="tab" data-days="180">直近6ヶ月</button>
+  </div>
+
+  <div class="aicard">
+    <div class="aihead">🤖 AIサマリー <span class="aibadge">自動生成</span></div>
+    <div class="aicols">
+      <div class="aicol pro"><div class="aicoltitle">😊 良い点・好評の声</div><ul id="aiPros"></ul></div>
+      <div class="aicol con"><div class="aicoltitle">⚠️ 課題・要望</div><ul id="aiCons"></ul></div>
+    </div>
+  </div>
+
+  <div class="section-label">📊 全体サマリー <span class="hint" id="rangeLabel"></span></div>
+  <div class="kpis" id="kpis"></div>
+
+  <div class="grid2" style="margin-top:14px">
+    <div class="card tall"><h3>評価の分布（1〜5）</h3><p class="cap">アプリ内レーティング</p><div class="cbox"><canvas id="cDist"></canvas></div></div>
+    <div class="card tall"><h3 id="trendTitle">評価の推移</h3><p class="cap">棒＝評価件数／線＝平均スコア</p><div class="cbox"><canvas id="cTrend"></canvas></div></div>
+  </div>
+  <div class="grid2" style="margin-top:14px">
+    <div class="card tall"><h3 id="volTitle">お問い合わせ・フィードバック件数の推移</h3><p class="cap">ユーザーからの能動的な声の量</p><div class="cbox"><canvas id="cVolume"></canvas></div></div>
+    <div class="card tall"><h3>フィードバックタイプの内訳</h3><p class="cap">複数選択式（1件に複数タグが付くため延べ数）</p><div class="cbox"><canvas id="cType"></canvas></div></div>
+  </div>
+  <div class="grid2" style="margin-top:14px">
+    <div class="card"><h3>お問い合わせの環境別</h3><p class="cap">最終ログイン環境</p><div class="cbox"><canvas id="cEnv"></canvas></div></div>
+    <div class="card"><h3>お問い合わせの言語別</h3><p class="cap">ja_kanji＝漢字表示モード</p><div class="cbox"><canvas id="cLang"></canvas></div></div>
+  </div>
+
+  <div class="section-label">🎧 カスタマーサービス向け <span class="hint">直近のお問い合わせ・フィードバック（新しい順）</span></div>
+  <div class="card">
+    <p class="tablenote" id="voiceNote"></p>
+    <table id="voiceTable">
+      <thead><tr><th>日時 (JST)</th><th>種別</th><th>ユーザー</th><th>環境</th><th>内容</th><th>管理画面</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<script id="baked" type="application/json">/*__BAKED__*/</script>
+<script>
+const BAKED = JSON.parse(document.getElementById('baked').textContent);
+const RECS = BAKED.records;
+const COL = { pos:"#1f9d6b", neg:"#e0533d", mid:"#f0a92b", blue:"#4f7cff", amber:"#f0a92b",
+  scale:["#e0533d","#f08c5a","#f0c84b","#9ec45a","#1f9d6b"],
+  palette:["#4f7cff","#1f9d6b","#e0533d","#f0a92b","#8b5cf6","#15b5c0","#ec6ea0","#6b7280"] };
+const TABLE_MAX = 120;
+document.getElementById('updated').textContent = "データ更新: " + BAKED.updated;
+
+function daysAgoStr(n){ const d=new Date(); d.setDate(d.getDate()-n);
+  const p=x=>String(x).padStart(2,"0"); return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate()); }
+function chunk(a,n){ const o=[]; for(let i=0;i<a.length;i+=n)o.push(a.slice(i,i+n)); return o; }
+const esc=s=>String(s||"").replace(/[<>&]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]));
+
+let charts={};
+function destroyAll(){ Object.values(charts).forEach(c=>c&&c.destroy()); charts={}; }
+function mk(id,cfg){ charts[id]=new Chart(document.getElementById(id),cfg); }
+
+function fillAI(label){
+  const ai=(BAKED.ai&&BAKED.ai[label])||{pros:[],cons:[]};
+  const f=(id,items,msg)=>{ document.getElementById(id).innerHTML=(items&&items.length)
+    ? items.map(x=>"<li>"+esc(x)+"</li>").join("") : '<li style="color:#9aa1ad">'+msg+'</li>'; };
+  f('aiPros',ai.pros,'この期間の特記事項はありません');
+  f('aiCons',ai.cons,'この期間の特記事項はありません 🎉');
+}
+
+function render(days){
+  destroyAll();
+  const cutoff=daysAgoStr(days-1);
+  const rs=RECS.filter(r=>r.dateStr>=cutoff);
+  const rat=rs.filter(r=>r.kind==="rating"), inq=rs.filter(r=>r.kind==="inquiry"), fb=rs.filter(r=>r.kind==="feedback");
+  const label=days===180?"直近6ヶ月":("直近"+days+"日");
+  document.getElementById('rangeLabel').textContent=`（${cutoff} 〜 / 評価${rat.length}・問い合わせ${inq.length}・FB${fb.length}件）`;
+  fillAI(label);
+
+  const dist={1:0,2:0,3:0,4:0,5:0}; rat.forEach(r=>dist[r.score]++);
+  const avg=rat.length?(rat.reduce((s,r)=>s+r.score,0)/rat.length):null;
+  const high=dist[4]+dist[5], highRate=rat.length?Math.round(high/rat.length*100):0;
+
+  document.getElementById('kpis').innerHTML=`
+    <div class="kpi"><div class="label">評価件数</div><div class="val">${rat.length}<small> 件</small></div></div>
+    <div class="kpi ${avg!=null?(avg>=3.5?'good':avg<3?'bad':''):''}"><div class="label">平均評価</div><div class="val">${avg!=null?avg.toFixed(2):'—'}<small> /5</small></div></div>
+    <div class="kpi ${highRate>=70?'good':highRate<50?'bad':''}"><div class="label">高評価率（★4-5）</div><div class="val">${rat.length?highRate:'—'}<small>%</small></div></div>
+    <div class="kpi"><div class="label">お問い合わせ</div><div class="val">${inq.length}<small> 件</small></div></div>
+    <div class="kpi"><div class="label">フィードバック</div><div class="val">${fb.length}<small> 件</small></div></div>`;
+
+  // 1) 分布
+  mk('cDist',{ type:'bar', data:{ labels:["★1","★2","★3","★4","★5"],
+    datasets:[{ data:[dist[1],dist[2],dist[3],dist[4],dist[5]], backgroundColor:COL.scale, borderRadius:5 }] },
+    options:{ responsive:true,maintainAspectRatio:false, plugins:{legend:{display:false}},
+      scales:{ y:{beginAtZero:true,ticks:{precision:0}} } } });
+
+  // 2) 評価推移（日/週）
+  const dayList=[]; for(let i=days-1;i>=0;i--) dayList.push(daysAgoStr(i));
+  const byDayR={}; rat.forEach(r=>{ (byDayR[r.dateStr]=byDayR[r.dateStr]||[]).push(r.score); });
+  let tL,tCnt,tAvg;
+  if(days<=31){ document.getElementById('trendTitle').textContent="評価の推移（日別）";
+    tL=dayList.map(d=>d.slice(5));
+    tCnt=dayList.map(d=>(byDayR[d]||[]).length);
+    tAvg=dayList.map(d=>{const a=byDayR[d]; return a&&a.length?+(a.reduce((x,y)=>x+y,0)/a.length).toFixed(2):null;});
+  } else { document.getElementById('trendTitle').textContent="評価の推移（週別）";
+    const ws=chunk(dayList,7);
+    tL=ws.map(w=>w[0].slice(5)+"週");
+    tCnt=ws.map(w=>w.reduce((s,d)=>s+((byDayR[d]||[]).length),0));
+    tAvg=ws.map(w=>{ const all=w.flatMap(d=>byDayR[d]||[]); return all.length?+(all.reduce((x,y)=>x+y,0)/all.length).toFixed(2):null; });
+  }
+  mk('cTrend',{ data:{ labels:tL, datasets:[
+      { type:'bar', label:'評価件数', data:tCnt, backgroundColor:'rgba(79,124,255,.45)', borderRadius:3, yAxisID:'y' },
+      { type:'line', label:'平均スコア', data:tAvg, borderColor:COL.amber, backgroundColor:COL.amber, spanGaps:true, tension:.3, pointRadius:2, borderWidth:2, yAxisID:'y1' } ]},
+    options:{ responsive:true,maintainAspectRatio:false, interaction:{mode:'index',intersect:false},
+      plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}},
+      scales:{ x:{ticks:{font:{size:10},autoSkip:true,maxRotation:0}},
+        y:{beginAtZero:true,ticks:{precision:0},position:'left'},
+        y1:{min:1,max:5,position:'right',grid:{display:false}} } } });
+
+  // 3) 問い合わせ・FB件数推移
+  const byDayV={}; [...inq.map(r=>({d:r.dateStr,k:'i'})),...fb.map(r=>({d:r.dateStr,k:'f'}))]
+    .forEach(x=>{ byDayV[x.d]=byDayV[x.d]||{i:0,f:0}; byDayV[x.d][x.k]++; });
+  let vL,vI,vF;
+  if(days<=31){ document.getElementById('volTitle').textContent="お問い合わせ・フィードバック件数（日別）";
+    vL=dayList.map(d=>d.slice(5)); vI=dayList.map(d=>(byDayV[d]||{}).i||0); vF=dayList.map(d=>(byDayV[d]||{}).f||0);
+  } else { document.getElementById('volTitle').textContent="お問い合わせ・フィードバック件数（週別）";
+    const ws=chunk(dayList,7); vL=ws.map(w=>w[0].slice(5)+"週");
+    vI=ws.map(w=>w.reduce((s,d)=>s+(((byDayV[d]||{}).i)||0),0));
+    vF=ws.map(w=>w.reduce((s,d)=>s+(((byDayV[d]||{}).f)||0),0));
+  }
+  mk('cVolume',{ type:'bar', data:{ labels:vL, datasets:[
+      { label:'お問い合わせ', data:vI, backgroundColor:COL.blue, borderRadius:3 },
+      { label:'フィードバック', data:vF, backgroundColor:COL.amber, borderRadius:3 } ]},
+    options:{ responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{position:'bottom',labels:{boxWidth:12,font:{size:11}}}},
+      scales:{ x:{stacked:true,ticks:{font:{size:10},autoSkip:true,maxRotation:0}}, y:{stacked:true,beginAtZero:true,ticks:{precision:0}} } } });
+
+  // 4) FBタイプ内訳
+  const tc={}; fb.forEach(r=>(r.types||[]).forEach(t=>tc[t]=(tc[t]||0)+1));
+  const tk=Object.keys(tc).sort((a,b)=>tc[b]-tc[a]).slice(0,10);
+  mk('cType',{ type:'bar', data:{ labels:tk, datasets:[{ data:tk.map(k=>tc[k]), backgroundColor:COL.palette[3], borderRadius:4 }] },
+    options:{ indexAxis:'y',responsive:true,maintainAspectRatio:false, plugins:{legend:{display:false}},
+      scales:{ x:{beginAtZero:true,ticks:{precision:0}}, y:{ticks:{font:{size:11}}} } } });
+
+  // 5) 環境別 / 6) 言語別（問い合わせ＋FB）
+  const cnt=(arr,key)=>{ const o={}; arr.forEach(r=>{const k=r[key]||"不明";o[k]=(o[k]||0)+1;}); return o; };
+  const both=[...inq,...fb];
+  const eo=cnt(both,'env'), ek=Object.keys(eo).sort((a,b)=>eo[b]-eo[a]);
+  mk('cEnv',{ type:'doughnut', data:{ labels:ek, datasets:[{ data:ek.map(k=>eo[k]), backgroundColor:COL.palette, borderWidth:1, borderColor:'#fff' }] },
+    options:{ responsive:true,maintainAspectRatio:false,cutout:'55%', plugins:{legend:{position:'right',labels:{boxWidth:12,font:{size:11}}}} } });
+  const lo=cnt(both,'lang'), lk=Object.keys(lo).sort((a,b)=>lo[b]-lo[a]);
+  mk('cLang',{ type:'doughnut', data:{ labels:lk, datasets:[{ data:lk.map(k=>lo[k]), backgroundColor:COL.palette.slice(2), borderWidth:1, borderColor:'#fff' }] },
+    options:{ responsive:true,maintainAspectRatio:false,cutout:'55%', plugins:{legend:{position:'right',labels:{boxWidth:12,font:{size:11}}}} } });
+
+  // CS一覧
+  const voices=both.sort((a,b)=>(b.dateStr+b.time).localeCompare(a.dateStr+a.time)).slice(0,TABLE_MAX);
+  document.getElementById('voiceNote').textContent=
+    `お問い合わせ＋フィードバック 計 ${both.length} 件` + (both.length>TABLE_MAX?`のうち、新しい ${TABLE_MAX} 件を表示`:``);
+  const tb=document.querySelector('#voiceTable tbody');
+  tb.innerHTML=voices.length?voices.map(r=>{
+    const kind=r.kind==='inquiry'?'<span class="tag inq">問い合わせ</span>':'<span class="tag fb">フィードバック</span>';
+    let body=esc(r.content)||'';
+    if(r.kind==='feedback'&&!body) body=(r.types||[]).map(t=>'<span class="tag">'+esc(t)+'</span>').join('');
+    if(!body) body='<span style="color:#9aa1ad">（本文なし）</span>';
+    return `<tr><td>${r.dateStr} ${r.time}</td><td>${kind}</td><td>${esc(r.name)||'—'}</td><td>${esc(r.env)}</td>
+      <td style="max-width:420px">${body}</td>
+      <td>${r.admin?`<a class="adm" href="${r.admin}" target="_blank" rel="noopener">ユーザー詳細 ↗</a>`:'—'}</td></tr>`;
+  }).join(''):`<tr><td colspan="6" class="empty">この期間のお問い合わせ・フィードバックはありません</td></tr>`;
+}
+
+document.getElementById('tabs').addEventListener('click',e=>{
+  const btn=e.target.closest('.tab'); if(!btn||btn.classList.contains('active'))return;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  btn.classList.add('active');
+  render(parseInt(btn.dataset.days,10));
+});
+render(7);
+</script>
+</body>
+</html>

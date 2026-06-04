@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<script type="application/json" id="cowork-artifact-meta">
+{
+  "name": "Saiten Kpi Dashboard",
+  "schemaVersion": 1,
+  "description": "採点くん／まなんでパズルのKPIライブダッシュボード。Slack #op-app-statistics の日次レポート（直近約50日分）を解析し、登録・課金プラン内訳・アクティビティ・評価（いいね率）を最新値＋推移グラフで表示。開くたびに最新データを取得。",
+  "mcpTools": [
+    "mcp__ecf16aa2-b5b6-440b-80fe-4bce36c8ddbb__slack_read_channel"
+  ],
+  "mcpServerNames": [
+    "Slack"
+  ]
+}
+</script>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>採点くん / まなんでパズル KPIダッシュボード</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: transparent;
+    --card: #ffffff;
+    --border: #e6e8eb;
+    --text: #1a1d21;
+    --muted: #6b7280;
+    --accent: #4f46e5;
+    --accent2: #0ea5e9;
+    --good: #16a34a;
+    --bad: #dc2626;
+    --radius: 14px;
+    --shadow: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", "Segoe UI", sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 1100px; margin: 0 auto; }
+  header.top { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+  h1 { font-size: 20px; margin: 0; letter-spacing: .2px; }
+  .sub { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .updated { color: var(--muted); font-size: 12px; }
+
+  /* Range tabs */
+  .tabs { display: inline-flex; background: #f1f3f5; border-radius: 10px; padding: 3px; gap: 2px; }
+  .tabs button { border: 0; background: transparent; color: var(--muted); font-size: 13px; font-weight: 600; padding: 7px 16px; border-radius: 8px; cursor: pointer; transition: all .12s; font-family: inherit; }
+  .tabs button.active { background: #fff; color: var(--accent); box-shadow: var(--shadow); }
+
+  /* App section */
+  .app-section { margin-top: 26px; }
+  .app-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 2px solid var(--border); }
+  .app-head .dot { width: 12px; height: 12px; border-radius: 4px; }
+  .app-head h2 { font-size: 17px; margin: 0; }
+  .app-head .badge { font-size: 11px; color: var(--muted); }
+
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+  .kpi { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; box-shadow: var(--shadow); }
+  .kpi .label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .kpi .value { font-size: 25px; font-weight: 700; line-height: 1.1; }
+  .kpi .unit { font-size: 13px; font-weight: 500; color: var(--muted); margin-left: 2px; }
+  .kpi .delta { font-size: 12px; margin-top: 6px; font-weight: 600; }
+  .delta.up { color: var(--good); }
+  .delta.down { color: var(--bad); }
+  .delta.flat { color: var(--muted); }
+
+  .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; margin-top: 14px; }
+  .chart-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px 10px; box-shadow: var(--shadow); }
+  .chart-card h3 { font-size: 14px; margin: 0 0 10px; }
+  .chart-box { position: relative; height: 230px; }
+  .chart-box.short { height: 205px; }
+
+  .loading, .error { padding: 40px 20px; text-align: center; color: var(--muted); font-size: 14px; }
+  .error { color: var(--bad); }
+  .footnote { color: var(--muted); font-size: 11px; margin-top: 20px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>採点くん / まなんでパズル KPI</h1>
+      <div class="sub">#op-app-statistics の日次レポートを集計</div>
+    </div>
+    <div style="text-align:right">
+      <div class="tabs" id="tabs">
+        <button data-days="7">1週間</button>
+        <button data-days="30" class="active">1ヶ月</button>
+        <button data-days="180">6ヶ月</button>
+      </div>
+      <div class="updated" id="updated" style="margin-top:6px"></div>
+    </div>
+  </header>
+
+  <div id="content">
+    <div class="loading" id="loading">Slackから最新の統計レポートを読み込み中…</div>
+  </div>
+
+  <div class="footnote">
+    データ元: Slack #op-app-statistics（App Statistics botの日次投稿）。期間タブは最新投稿日を基準に直近 7 / 30 / 180 日を表示します。履歴はチャンネルに蓄積された分だけ取得します（最大8ページ分を遡及）。数値はbot投稿のスナップショットのため、欠損日があると推移に隙間が出ることがあります。
+  </div>
+</div>
+
+<script>
+const CHANNEL_ID = "C08R1MRSXDF";
+const TOOL = "mcp__ecf16aa2-b5b6-440b-80fe-4bce36c8ddbb__slack_read_channel";
+
+let DATA = { saiten: [], puzzle: [] };
+let CHARTS = [];
+let LAST_TEXT = "";
+
+const palette = { indigo: "#4f46e5", sky: "#0ea5e9", green: "#16a34a", red: "#dc2626", amber: "#d97706", slate: "#64748b", violet: "#8b5cf6" };
+
+function extractText(o, depth) {
+  depth = depth || 0;
+  if (o == null || depth > 8) return "";
+  if (typeof o === "string") {
+    const t = o.trim();
+    if ((t.startsWith("{") || t.startsWith("[")) && t.length > 2) {
+      try { const r = extractText(JSON.parse(t), depth + 1); if (r) return r; } catch (e) {}
+    }
+    return o;
+  }
+  if (typeof o === "object") {
+    if (typeof o.messages === "string") return extractText(o.messages, depth + 1);
+    if (Array.isArray(o.content)) { const r = o.content.map(c => extractText(c, depth + 1)).filter(Boolean).join("\n"); if (r) return r; }
+    if (Array.isArray(o)) { const r = o.map(c => extractText(c, depth + 1)).filter(Boolean).join("\n"); if (r) return r; }
+    if (typeof o.text === "string") return extractText(o.text, depth + 1);
+    if (o.result) { const r = extractText(o.result, depth + 1); if (r) return r; }
+    if (o.data) { const r = extractText(o.data, depth + 1); if (r) return r; }
+    try { return JSON.stringify(o); } catch (e) { return ""; }
+  }
+  return "";
+}
+
+const num = s => (s != null && s !== "") ? parseFloat(String(s).replace(/,/g, "")) : null;
+function pad(n){ return String(n).padStart(2,"0"); }
+
+function normalize(text) {
+  let t = text;
+  if (t.indexOf("\\n") !== -1 && t.indexOf("\n") === -1) {
+    t = t.replace(/\\r/g, "").replace(/\\n/g, "\n").replace(/\\t/g, " ").replace(/\\"/g, '"');
+  }
+  t = t.replace(/\\u([0-9a-fA-F]{4})/g, (m, h) => String.fromCharCode(parseInt(h, 16)));
+  return t;
+}
+
+function findCursor(raw) {
+  if (!raw) return null;
+  if (/no more pages|end of results/i.test(raw)) return null;
+  const m = raw.match(/cursor[^`A-Za-z0-9]*`?([A-Za-z0-9+/=_\-]{10,})`?/i);
+  return m ? m[1] : null;
+}
+
+function parseReports(rawText) {
+  const text = normalize(rawText);
+  const titleRe = /(採点くん|まなんでパズル)\s*統計レポート\s*[（(](\d{4})\/(\d{1,2})\/(\d{1,2})[)）]/g;
+  const hits = [];
+  let m;
+  while ((m = titleRe.exec(text)) !== null) hits.push({ app: m[1], y: m[2], mo: m[3], d: m[4], idx: m.index });
+  const saiten = {}, puzzle = {};
+  for (let i = 0; i < hits.length; i++) {
+    const h = hits[i];
+    const body = text.slice(h.idx, i + 1 < hits.length ? hits[i + 1].idx : text.length);
+    const date = `${h.y}-${pad(h.mo)}-${pad(h.d)}`;
+    const get = re => { const x = body.match(re); return x ? num(x[1]) : null; };
+    if (h.app === "採点くん") {
+      saiten[date] = {
+        date,
+        registered: get(/登録ユーザー数[:：]\s*\*?\s*([\d,]+)\s*人/),
+        totalScore: get(/総採点数[:：]\s*\*?\s*([\d,]+)\s*回/),
+        free: get(/Free[:：]\s*([\d,]+)\s*人/),
+        pro: get(/Pro[:：]\s*([\d,]+)\s*人/),
+        premium: get(/Premium[:：]\s*([\d,]+)\s*人/),
+        dayScore: get(/当日の統計[\s\S]*?採点数[:：]\s*([\d,]+)\s*回/),
+        active: get(/アクティブユーザー数[:：]\s*([\d,]+)\s*人/),
+        newUsers: get(/新規登録ユーザー数[:：]\s*([\d,]+)\s*人/),
+        like: get(/いいね[:：]\s*([\d,]+)\s*件/),
+        dislike: get(/よくないね[:：]\s*([\d,]+)\s*件/),
+      };
+    } else {
+      puzzle[date] = {
+        date,
+        totalUsers: get(/トータルユーザー数[:：]\*?\s*([\d,]+)/),
+        totalAccounts: get(/トータルアカウント数[:：]\*?\s*([\d,]+)/),
+        newUsers: get(/今日の新規ユーザー[:：]\*?\s*([\d,]+)/),
+      };
+    }
+  }
+  const sortVals = o => Object.values(o).sort((a,b) => a.date < b.date ? -1 : 1);
+  return { saiten: sortVals(saiten), puzzle: sortVals(puzzle) };
+}
+
+const fmt = n => n == null ? "—" : n.toLocaleString("ja-JP");
+const shortDate = d => { const p = d.split("-"); return `${parseInt(p[1])}/${parseInt(p[2])}`; };
+
+function filterByDays(series, days) {
+  if (!series.length) return [];
+  const last = new Date(series[series.length - 1].date + "T00:00:00");
+  const from = new Date(last); from.setDate(from.getDate() - (days - 1));
+  return series.filter(d => new Date(d.date + "T00:00:00") >= from);
+}
+
+function deltaHtml(cur, prev, unit) {
+  if (cur == null || prev == null) return '<div class="delta flat">前日比 —</div>';
+  const d = cur - prev;
+  const cls = d > 0 ? "up" : d < 0 ? "down" : "flat";
+  const arrow = d > 0 ? "▲" : d < 0 ? "▼" : "→";
+  return `<div class="delta ${cls}">${arrow} ${d > 0 ? "+" : ""}${fmt(d)}${unit||""} <span style="color:var(--muted);font-weight:400">前日比</span></div>`;
+}
+const kpiCard = (label, value, unit, deltaH) =>
+  `<div class="kpi"><div class="label">${label}</div><div class="value">${value}<span class="unit">${unit||""}</span></div>${deltaH||""}</div>`;
+
+function lineCfg(labels, datasets, opts) {
+  return {
+    type: "line",
+    data: { labels, datasets },
+    options: Object.assign({
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: { legend: { display: datasets.length > 1, labels: { boxWidth: 12, font: { size: 11 } } } },
+      elements: { point: { radius: 0, hoverRadius: 4 }, line: { tension: .3, borderWidth: 2 } },
+      scales: { x: { ticks: { maxTicksLimit: 7, font: { size: 10 } }, grid: { display: false } },
+                y: { ticks: { font: { size: 10 } }, grid: { color: "#f1f3f5" } } }
+    }, opts || {})
+  };
+}
+function mkChart(id, cfg) { const el = document.getElementById(id); if (el) CHARTS.push(new Chart(el, cfg)); }
+
+function buildLayout() {
+  const S = DATA.saiten, P = DATA.puzzle;
+  const content = document.getElementById("content");
+  if (!S.length && !P.length) {
+    const sample = (LAST_TEXT || "").slice(0, 600).replace(/</g, "&lt;");
+    content.innerHTML = '<div class="error">統計レポートを解析できませんでした。投稿形式が変わった可能性があります。</div>'
+      + '<div class="footnote" style="white-space:pre-wrap;word-break:break-all">受信データ長: ' + (LAST_TEXT ? LAST_TEXT.length : 0) + ' 文字<br>先頭サンプル:<br>' + (sample || "(空)") + '</div>';
+    return false;
+  }
+  // ---- 採点くん ----
+  const sLast = S[S.length-1] || {}, sPrev = S[S.length-2] || {};
+  const paid = (sLast.pro||0)+(sLast.premium||0), paidPrev = (sPrev.pro||0)+(sPrev.premium||0);
+  const likeRate = (sLast.like!=null && sLast.dislike!=null && (sLast.like+sLast.dislike)>0) ? (sLast.like/(sLast.like+sLast.dislike)*100) : null;
+
+  let html = "";
+  if (S.length) {
+    html += `<div class="app-section">
+      <div class="app-head"><span class="dot" style="background:${palette.indigo}"></span><h2>採点くん</h2><span class="badge">最新 ${sLast.date?shortDate(sLast.date):"—"}</span></div>
+      <div class="kpi-grid">
+        ${kpiCard("登録ユーザー", fmt(sLast.registered), "人", deltaHtml(sLast.registered, sPrev.registered, "人"))}
+        ${kpiCard("課金 (Pro+Premium)", fmt(paid), "人", deltaHtml(paid, paidPrev, "人"))}
+        ${kpiCard("当日採点数", fmt(sLast.dayScore), "回", deltaHtml(sLast.dayScore, sPrev.dayScore, "回"))}
+        ${kpiCard("アクティブ", fmt(sLast.active), "人", deltaHtml(sLast.active, sPrev.active, "人"))}
+        ${kpiCard("いいね率", likeRate!=null?likeRate.toFixed(1):"—", "%", deltaHtml(sLast.like, sPrev.like, "件"))}
+      </div>
+      <div class="charts">
+        <div class="chart-card"><h3>登録ユーザー数の推移</h3><div class="chart-box"><canvas id="s-users"></canvas></div></div>
+        <div class="chart-card"><h3>課金プラン内訳（最新）</h3><div class="chart-box short"><canvas id="s-plan"></canvas></div></div>
+        <div class="chart-card"><h3>課金ユーザーの推移（Pro / Premium）</h3><div class="chart-box"><canvas id="s-paid"></canvas></div></div>
+        <div class="chart-card"><h3>アクティビティ（当日採点数・アクティブ数）</h3><div class="chart-box"><canvas id="s-activity"></canvas></div></div>
+        <div class="chart-card"><h3>評価の推移（いいね率）</h3><div class="chart-box"><canvas id="s-likerate"></canvas></div></div>
+        <div class="chart-card"><h3>累計評価（最新）</h3><div class="chart-box short"><canvas id="s-rating"></canvas></div></div>
+      </div>
+    </div>`;
+  }
+  // ---- まなんでパズル ----
+  const pLast = P[P.length-1] || {}, pPrev = P[P.length-2] || {};
+  if (P.length) {
+    html += `<div class="app-section">
+      <div class="app-head"><span class="dot" style="background:${palette.sky}"></span><h2>まなんでパズル</h2><span class="badge">最新 ${pLast.date?shortDate(pLast.date):"—"}</span></div>
+      <div class="kpi-grid">
+        ${kpiCard("総ユーザー", fmt(pLast.totalUsers), "人", deltaHtml(pLast.totalUsers, pPrev.totalUsers, "人"))}
+        ${kpiCard("総アカウント", fmt(pLast.totalAccounts), "件", deltaHtml(pLast.totalAccounts, pPrev.totalAccounts, "件"))}
+        ${kpiCard("当日新規ユーザー", fmt(pLast.newUsers), "人", deltaHtml(pLast.newUsers, pPrev.newUsers, "人"))}
+      </div>
+      <div class="charts">
+        <div class="chart-card"><h3>総ユーザー数の推移</h3><div class="chart-box"><canvas id="p-users"></canvas></div></div>
+        <div class="chart-card"><h3>総アカウント数の推移</h3><div class="chart-box"><canvas id="p-accounts"></canvas></div></div>
+        <div class="chart-card"><h3>当日新規ユーザー数</h3><div class="chart-box"><canvas id="p-new"></canvas></div></div>
+      </div>
+    </div>`;
+  }
+  content.innerHTML = html;
+  return true;
+}
+
+function drawCharts(days) {
+  CHARTS.forEach(c => c.destroy()); CHARTS = [];
+  const S = filterByDays(DATA.saiten, days);
+  const P = filterByDays(DATA.puzzle, days);
+  const sL = S.map(d => shortDate(d.date));
+  const pL = P.map(d => shortDate(d.date));
+
+  if (S.length) {
+    const last = DATA.saiten[DATA.saiten.length-1];
+    mkChart("s-users", lineCfg(sL, [
+      { label: "登録ユーザー", data: S.map(d => d.registered), borderColor: palette.indigo, backgroundColor: "rgba(79,70,229,.08)", fill: true },
+    ]));
+    mkChart("s-plan", {
+      type: "doughnut",
+      data: { labels: ["Free","Pro","Premium"], datasets: [{ data: [last.free,last.pro,last.premium], backgroundColor: [palette.slate,palette.indigo,palette.violet], borderWidth: 0 }] },
+      options: { responsive: true, maintainAspectRatio: false, cutout: "62%", plugins: { legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 11 } } } } }
+    });
+    mkChart("s-paid", lineCfg(sL, [
+      { label: "Pro", data: S.map(d => d.pro), borderColor: palette.indigo },
+      { label: "Premium", data: S.map(d => d.premium), borderColor: palette.violet },
+    ]));
+    mkChart("s-activity", {
+      type: "bar",
+      data: { labels: sL, datasets: [
+        { type: "bar", label: "当日採点数", data: S.map(d => d.dayScore), backgroundColor: "rgba(14,165,233,.45)", borderRadius: 3, yAxisID: "y" },
+        { type: "line", label: "アクティブ数", data: S.map(d => d.active), borderColor: palette.indigo, borderWidth: 2, tension: .3, pointRadius: 0, yAxisID: "y1" },
+      ] },
+      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
+        plugins: { legend: { labels: { boxWidth: 12, font: { size: 11 } } } },
+        scales: { x: { ticks: { maxTicksLimit: 7, font: { size: 10 } }, grid: { display: false } },
+                  y: { position: "left", ticks: { font: { size: 10 } }, grid: { color: "#f1f3f5" } },
+                  y1: { position: "right", ticks: { font: { size: 10 } }, grid: { display: false } } } }
+    });
+    const rates = S.map(d => (d.like!=null && d.dislike!=null && (d.like+d.dislike)>0) ? +(d.like/(d.like+d.dislike)*100).toFixed(1) : null);
+    mkChart("s-likerate", lineCfg(sL, [
+      { label: "いいね率(%)", data: rates, borderColor: palette.green, backgroundColor: "rgba(22,163,74,.08)", fill: true, spanGaps: true },
+    ], { scales: { x: { ticks: { maxTicksLimit: 7, font: { size: 10 } }, grid: { display: false } },
+                   y: { ticks: { font: { size: 10 }, callback: v => v + "%" }, grid: { color: "#f1f3f5" }, suggestedMin: 0, suggestedMax: 100 } } }));
+    mkChart("s-rating", {
+      type: "doughnut",
+      data: { labels: ["いいね","よくないね"], datasets: [{ data: [last.like,last.dislike], backgroundColor: [palette.green,palette.red], borderWidth: 0 }] },
+      options: { responsive: true, maintainAspectRatio: false, cutout: "62%", plugins: { legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 11 } } } } }
+    });
+  }
+  if (P.length) {
+    mkChart("p-users", lineCfg(pL, [
+      { label: "総ユーザー", data: P.map(d => d.totalUsers), borderColor: palette.sky, backgroundColor: "rgba(14,165,233,.08)", fill: true },
+    ]));
+    mkChart("p-accounts", lineCfg(pL, [
+      { label: "総アカウント", data: P.map(d => d.totalAccounts), borderColor: palette.amber, backgroundColor: "rgba(217,119,6,.08)", fill: true },
+    ]));
+    mkChart("p-new", {
+      type: "bar",
+      data: { labels: pL, datasets: [{ label: "当日新規ユーザー", data: P.map(d => d.newUsers), backgroundColor: "rgba(14,165,233,.55)", borderRadius: 3 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } },
+        scales: { x: { ticks: { maxTicksLimit: 7, font: { size: 10 } }, grid: { display: false } }, y: { ticks: { font: { size: 10 } }, grid: { color: "#f1f3f5" }, beginAtZero: true } } }
+    });
+  }
+}
+
+function wireTabs() {
+  const tabs = document.getElementById("tabs");
+  tabs.addEventListener("click", e => {
+    const btn = e.target.closest("button"); if (!btn) return;
+    [...tabs.children].forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    drawCharts(parseInt(btn.dataset.days, 10));
+    try { localStorage.setItem("kpi_range", btn.dataset.days); } catch (e) {}
+  });
+}
+
+async function fetchAll(maxPages) {
+  let cursor = null, text = "", pages = 0;
+  do {
+    const args = { channel_id: CHANNEL_ID, limit: 100, response_format: "detailed" };
+    if (cursor) args.cursor = cursor;
+    const res = await window.cowork.callMcpTool(TOOL, args);
+    let raw; try { raw = typeof res === "string" ? res : JSON.stringify(res); } catch (e) { raw = ""; }
+    text += "\n" + normalize(extractText(res));
+    cursor = findCursor(raw);
+    pages++;
+  } while (cursor && pages < maxPages);
+  return text;
+}
+
+async function init() {
+  try {
+    const text = await fetchAll(8);
+    LAST_TEXT = text;
+    DATA = parseReports(text);
+    if (!buildLayout()) return;
+    wireTabs();
+    let saved = 30; try { const v = localStorage.getItem("kpi_range"); if (v) saved = parseInt(v, 10); } catch (e) {}
+    const tabs = document.getElementById("tabs");
+    [...tabs.children].forEach(b => b.classList.toggle("active", parseInt(b.dataset.days,10) === saved));
+    if (![7,30,180].includes(saved)) { saved = 30; [...tabs.children].forEach(b => b.classList.toggle("active", b.dataset.days === "30")); }
+    drawCharts(saved);
+    document.getElementById("updated").textContent = "最終更新: " + new Date().toLocaleString("ja-JP");
+  } catch (e) {
+    document.getElementById("content").innerHTML = '<div class="error">データ取得に失敗しました: ' + (e && e.message ? e.message : e) + '</div>';
+  }
+}
+init();
+</script>
+</body>
+</html>

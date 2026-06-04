@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>株式会社インネクサス｜経営ダッシュボード</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
+<style>
+:root{ color-scheme: light; }
+*{ box-sizing:border-box; }
+body{
+  margin:0; font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP","Segoe UI",sans-serif;
+  background:#f7f5f5; color:#23418c;
+}
+.wrap{ max-width:1180px; margin:0 auto; padding:20px 18px 56px; }
+header.top{
+  background:linear-gradient(135deg,#285ac8 0%,#1e46aa 100%);
+  color:#fff; border-radius:16px; padding:20px 24px; margin-bottom:14px;
+  box-shadow:0 6px 20px rgba(30,70,170,.18);
+}
+header.top h1{ margin:0 0 4px; font-size:20px; font-weight:700; letter-spacing:.02em; }
+header.top .sub{ font-size:12.5px; opacity:.92; }
+header.top .meta{ font-size:11.5px; opacity:.8; margin-top:8px; }
+.tabs{ display:flex; gap:8px; margin:0 2px 6px; }
+.tab{ border:1px solid #cdddf8; background:#fff; color:#1e46aa; font-weight:700; font-size:13px;
+  padding:9px 18px; border-radius:11px 11px 0 0; cursor:pointer; transition:.15s; }
+.tab:hover{ background:#ebf3ff; }
+.tab.active{ background:#285ac8; color:#fff; border-color:#285ac8; box-shadow:0 -2px 8px rgba(40,90,200,.12); }
+.section-title{ font-size:14px; font-weight:700; color:#1e46aa; margin:24px 4px 12px;
+  display:flex; align-items:center; gap:8px; }
+.section-title::before{ content:""; width:5px; height:16px; background:#285ac8; border-radius:3px; display:inline-block; }
+.cards{ display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; }
+.card{ background:#fff; border:1px solid #e3ecfb; border-radius:13px; padding:14px 16px;
+  box-shadow:0 2px 8px rgba(40,90,200,.06); }
+.card .label{ font-size:11.5px; color:#323232; font-weight:600; }
+.card .value{ font-size:21px; font-weight:700; color:#1e46aa; margin-top:5px; letter-spacing:-.01em; }
+.card .value.neg{ color:#dc1e32; }
+.card .sub{ font-size:11px; color:#323232; margin-top:3px; }
+.grid2{ display:grid; grid-template-columns:repeat(auto-fit,minmax(330px,1fr)); gap:16px; }
+.panel{ background:#fff; border:1px solid #e3ecfb; border-radius:14px; padding:16px 16px 10px;
+  box-shadow:0 2px 10px rgba(40,90,200,.06); }
+.panel h3{ margin:0 0 4px; font-size:13.5px; color:#1e46aa; font-weight:700; }
+.panel .cap{ font-size:10.5px; color:#323232; margin:0 0 10px; opacity:.85; }
+.chartbox{ position:relative; width:100%; }
+.chartbox.h260{ height:260px; } .chartbox.h300{ height:300px; } .chartbox.h340{ height:340px; }
+.note{ font-size:11px; color:#323232; background:#ebf3ff; border-radius:10px; padding:10px 13px; margin-top:18px; line-height:1.6; }
+.ai{ border-left:5px solid #00b9b9; background:linear-gradient(180deg,#fff,#f3fbfb); }
+.ai h3{ display:flex; align-items:center; gap:8px; }
+.tag{ display:inline-block; font-size:10px; background:#e0f6f6; color:#008c8c; border-radius:6px; padding:2px 8px; font-weight:700; }
+.ai-body{ font-size:12.5px; line-height:1.8; color:#23418c; white-space:pre-wrap; }
+.err{ color:#dc1e32; font-size:12px; padding:14px; text-align:center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>株式会社インネクサス｜経営ダッシュボード</h1>
+    <div class="sub" id="period">freee会計</div>
+    <div class="meta" id="meta">承認済み仕訳ベース（未承認除く）</div>
+  </header>
+
+  <div class="tabs">
+    <button class="tab active" id="tabCur" onclick="switchTab('cur')">当期</button>
+    <button class="tab" id="tabCum" onclick="switchTab('cum')">累積（全期間）</button>
+  </div>
+
+  <!-- ===== 当期ビュー ===== -->
+  <div id="viewCur">
+    <div class="panel ai" style="margin-bottom:6px">
+      <h3>AIによる経営分析<span class="tag">自動生成</span></h3>
+      <div class="ai-body" id="aiCur"></div>
+    </div>
+    <div class="section-title">経営サマリー（当期：実績＋通期見込み）</div>
+    <div class="cards" id="kpis"></div>
+
+    <div class="section-title">損益・収益構造</div>
+    <div class="grid2">
+      <div class="panel"><h3>利益段階の推移</h3><p class="cap">売上から各利益段階までの金額（当期累計）</p>
+        <div class="chartbox h300"><canvas id="cWaterfall"></canvas></div></div>
+      <div class="panel"><h3>売上構成（サービス別）</h3><p class="cap">売上高の内訳と構成比</p>
+        <div class="chartbox h300"><canvas id="cRevenue"></canvas></div></div>
+    </div>
+
+    <div class="section-title">月次トレンド</div>
+    <div class="panel"><h3>月次の売上高・営業利益（実績＋見込み）</h3><p class="cap">濃色＝実績（完了月）／淡色・点線＝見込み（直近3ヶ月の平均ペースで当月以降を試算）</p>
+      <div class="chartbox h300"><canvas id="cMonthly"></canvas></div></div>
+
+    <div class="section-title">コスト分析</div>
+    <div class="panel"><h3>販管費の内訳（金額上位）</h3><p class="cap">当期累計の販売管理費を費目別に降順表示</p>
+      <div class="chartbox h340"><canvas id="cExpense"></canvas></div></div>
+
+    <div class="section-title">資金・前年比較</div>
+    <div class="grid2">
+      <div class="panel"><h3>口座別 現預金残高</h3><p class="cap">登録口座の最新残高（マイナスはカード未払等）</p>
+        <div class="chartbox h300"><canvas id="cCash"></canvas></div></div>
+      <div class="panel"><h3>前期比較</h3><p class="cap">前期（通期確定）と当期（実績＝期中YTD・着地ではない）の比較</p>
+        <div class="chartbox h300"><canvas id="cYoY"></canvas></div></div>
+    </div>
+    <div class="note" id="insights"></div>
+  </div>
+
+  <!-- ===== 累積ビュー ===== -->
+  <div id="viewCum" style="display:none">
+    <div class="panel ai" style="margin-bottom:6px">
+      <h3>AIによる経営分析（全期間）<span class="tag">自動生成</span></h3>
+      <div class="ai-body" id="aiCum"></div>
+    </div>
+    <div class="section-title">累積サマリー</div>
+    <div class="cards" id="kpisCum"></div>
+
+    <div class="section-title">月次トレンド（全期間）</div>
+    <div class="panel"><h3>月次の売上高・営業利益</h3><p class="cap">創業（2021/9）から当月までの発生月ベース（当月は途中経過）</p>
+      <div class="chartbox h340"><canvas id="cCumMonthly"></canvas></div></div>
+
+    <div class="section-title">年度別 業績推移</div>
+    <div class="panel"><h3>売上高・各段階利益の推移</h3><p class="cap">会計年度ごとの売上高・営業利益・経常利益・当期純利益</p>
+      <div class="chartbox h340"><canvas id="cFYTrend"></canvas></div></div>
+
+    <div class="section-title">利益の積み上がり</div>
+    <div class="grid2">
+      <div class="panel"><h3>累積純利益の推移</h3><p class="cap">当期純利益の累積（内部留保の目安）</p>
+        <div class="chartbox h300"><canvas id="cFYNet"></canvas></div></div>
+      <div class="panel"><h3>売上構成（全期間累積）</h3><p class="cap">サービス分類別の累積売上</p>
+        <div class="chartbox h300"><canvas id="cRevenueCum"></canvas></div></div>
+    </div>
+
+    <div class="section-title">コスト分析（全期間累積）</div>
+    <div class="panel"><h3>販管費の内訳（累積・金額上位）</h3><p class="cap">全期間の販売管理費を費目別に降順表示</p>
+      <div class="chartbox h340"><canvas id="cExpenseCum"></canvas></div></div>
+    <div class="note" id="insightsCum"></div>
+  </div>
+</div>
+
+<script id="baked" type="application/json">/*__BAKED__*/</script>
+<script>
+const BAKED = JSON.parse(document.getElementById('baked').textContent);
+const C = { blue:'#285ac8', deep:'#1e46aa', link:'#2864f0', teal:'#00b9b9',
+  green:'#82c31e', yellow:'#ffb91e', orange:'#fa6414', red:'#dc1e32', grey:'#b9c6e0', ink:'#23418c' };
+const yen = n => '¥' + Math.round(n||0).toLocaleString('ja-JP');
+const fmtAxis={ ticks:{ callback:v=>(v/1e4).toLocaleString('ja-JP')+'万', color:'#323232', font:{size:10} }, grid:{color:'#eef2fb'} };
+const charts={};
+function mk(id,cfg){ const el=document.getElementById(id); if(!el) return; if(charts[id]) charts[id].destroy(); charts[id]=new Chart(el.getContext('2d'),cfg); }
+function cards(elId, arr){ document.getElementById(elId).innerHTML = arr.map(k=>`
+  <div class="card"><div class="label">${k.label}</div>
+  <div class="value ${k.neg?'neg':''}">${k.value}</div>
+  <div class="sub">${k.sub||''}</div></div>`).join(''); }
+
+document.getElementById('period').textContent = BAKED.period;
+document.getElementById('meta').textContent = BAKED.meta;
+
+let cumDrawn=false;
+function switchTab(name){
+  const cur=name==='cur';
+  document.getElementById('tabCur').classList.toggle('active',cur);
+  document.getElementById('tabCum').classList.toggle('active',!cur);
+  document.getElementById('viewCur').style.display=cur?'block':'none';
+  document.getElementById('viewCum').style.display=cur?'none':'block';
+  if(!cur && !cumDrawn){ cumDrawn=true; drawCum(); }
+}
+
+function drawCur(){
+  const d=BAKED.cur;
+  document.getElementById('aiCur').textContent = d.ai || '';
+  cards('kpis', d.cards);
+
+  mk('cWaterfall',{ type:'bar', data:{ labels:['売上高','売上総利益','営業利益','経常利益','当期純利益'],
+    datasets:[{ data:d.waterfall, backgroundColor:[C.blue,C.teal,C.green,C.yellow,C.deep], borderRadius:6 }] },
+    options:{ responsive:true,maintainAspectRatio:false, plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>yen(c.parsed.y)}}},
+      scales:{ y:fmtAxis, x:{grid:{display:false},ticks:{color:'#323232',font:{size:11}}} } } });
+
+  mk('cRevenue',{ type:'doughnut', data:{ labels:d.rev.labels,
+    datasets:[{ data:d.rev.data, backgroundColor:[C.blue,C.teal,C.green,C.yellow,C.orange,C.link] }] },
+    options:{ responsive:true,maintainAspectRatio:false,cutout:'58%',
+      plugins:{ legend:{position:'right',labels:{color:'#23418c',font:{size:11},boxWidth:12}},
+        tooltip:{callbacks:{label:c=>`${c.label}: ${yen(c.parsed)} (${(c.parsed/d.salesTotal*100).toFixed(1)}%)`}}} } });
+
+  mk('cMonthly',{ data:{ labels:d.monthly.labels, datasets:[
+      { type:'bar',label:'売上高(実績)',data:d.monthly.salesAct,backgroundColor:C.blue,borderRadius:5,order:3 },
+      { type:'bar',label:'売上高(見込み)',data:d.monthly.salesFc,backgroundColor:'rgba(0,185,185,.40)',borderColor:C.teal,borderWidth:1,borderRadius:5,order:3 },
+      { type:'line',label:'営業利益（実線=実績／点線=見込み）',data:d.monthly.opLine,borderColor:C.orange,backgroundColor:C.orange,tension:.3,pointRadius:2,borderWidth:2,order:1,
+        segment:{ borderDash: ctx=> (ctx.p1DataIndex>=d.monthly.completedIdx ? [5,4] : undefined) } } ]},
+    options:{ responsive:true,maintainAspectRatio:false, plugins:{legend:{labels:{color:'#23418c',font:{size:10},boxWidth:12}},tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${yen(c.parsed.y)}`}}},
+      scales:{ y:fmtAxis, x:{grid:{display:false},ticks:{color:'#323232',font:{size:10}}} } } });
+
+  mk('cExpense',{ type:'bar', data:{ labels:d.exp.labels,
+    datasets:[{ data:d.exp.data, backgroundColor:C.link, borderRadius:5 }] },
+    options:{ indexAxis:'y',responsive:true,maintainAspectRatio:false, plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>yen(c.parsed.x)}}},
+      scales:{ x:fmtAxis, y:{grid:{display:false},ticks:{color:'#23418c',font:{size:11}}} } } });
+
+  if(d.cash.labels.length) mk('cCash',{ type:'bar', data:{ labels:d.cash.labels,
+    datasets:[{ data:d.cash.data, backgroundColor:d.cash.data.map(v=>v<0?C.red:C.teal), borderRadius:5 }] },
+    options:{ responsive:true,maintainAspectRatio:false, plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>yen(c.parsed.y)}}},
+      scales:{ y:fmtAxis, x:{grid:{display:false},ticks:{color:'#323232',font:{size:10},maxRotation:50,minRotation:30}} } } });
+
+  if(d.yoy) mk('cYoY',{ type:'bar', data:{ labels:d.yoy.labels, datasets:[
+      { label:'前期(通期)',data:d.yoy.prev,backgroundColor:C.grey,borderRadius:5 },
+      { label:'当期(実績・期中)',data:d.yoy.cur,backgroundColor:C.blue,borderRadius:5 } ]},
+    options:{ responsive:true,maintainAspectRatio:false, plugins:{legend:{labels:{color:'#23418c',font:{size:11}}},tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${yen(c.parsed.y)}`}}},
+      scales:{ y:fmtAxis, x:{grid:{display:false},ticks:{color:'#23418c',font:{size:11}}} } } });
+
+  document.getElementById('insights').innerHTML = d.note;
+}
+
+function drawCum(){
+  const d=BAKED.cum;
+  document.getElementById('aiCum').textContent = d.ai || '';
+  cards('kpisCum', d.cards);
+
+  mk('cCumMonthly',{ data:{ labels:d.monthly.labels, datasets:[
+      { type:'bar',label:'売上高',data:d.monthly.sales,backgroundColor:C.blue,borderRadius:3,order:2 },
+      { type:'line',label:'営業利益',data:d.monthly.op,borderColor:C.orange,backgroundColor:C.orange,tension:.25,pointRadius:0,borderWidth:2,order:1 } ]},
+    options:{ responsive:true,maintainAspectRatio:false,
+      plugins:{ legend:{labels:{color:'#23418c',font:{size:11}}}, tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${yen(c.parsed.y)}`}}},
+      scales:{ y:fmtAxis, x:{grid:{display:false},ticks:{color:'#323232',font:{size:9},autoSkip:true,maxTicksLimit:16,maxRotation:0}} } } });
+
+  mk('cFYTrend',{ data:{ labels:d.fy.labels, datasets:[
+      { type:'bar',label:'売上高',data:d.fy.sales,backgroundColor:C.blue,borderRadius:5,order:3 },
+      { type:'line',label:'営業利益',data:d.fy.op,borderColor:C.green,backgroundColor:C.green,tension:.3,pointRadius:3,borderWidth:2,order:2 },
+      { type:'line',label:'経常利益',data:d.fy.ord,borderColor:C.yellow,backgroundColor:C.yellow,tension:.3,pointRadius:3,borderWidth:2,order:1 },
+      { type:'line',label:'当期純利益',data:d.fy.net,borderColor:C.orange,backgroundColor:C.orange,tension:.3,pointRadius:3,borderWidth:2,order:1 } ]},
+    options:{ responsive:true,maintainAspectRatio:false, plugins:{legend:{labels:{color:'#23418c',font:{size:11}}},tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${yen(c.parsed.y)}`}}},
+      scales:{ y:fmtAxis, x:{grid:{display:false},ticks:{color:'#23418c',font:{size:11}}} } } });
+
+  mk('cFYNet',{ data:{ labels:d.fy.labels, datasets:[
+      { type:'line',label:'累積純利益',data:d.cumNet,borderColor:C.deep,backgroundColor:'rgba(40,90,200,.12)',fill:true,tension:.25,pointRadius:3,borderWidth:2 } ]},
+    options:{ responsive:true,maintainAspectRatio:false, plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>yen(c.parsed.y)}}},
+      scales:{ y:fmtAxis, x:{grid:{display:false},ticks:{color:'#23418c',font:{size:11}}} } } });
+
+  mk('cRevenueCum',{ type:'doughnut', data:{ labels:d.rev.labels,
+    datasets:[{ data:d.rev.data, backgroundColor:[C.blue,C.teal,C.green,C.yellow,C.orange,C.link,C.grey] }] },
+    options:{ responsive:true,maintainAspectRatio:false,cutout:'58%',
+      plugins:{ legend:{position:'right',labels:{color:'#23418c',font:{size:11},boxWidth:12}},
+        tooltip:{callbacks:{label:c=>`${c.label}: ${yen(c.parsed)} (${(c.parsed/d.salesTotal*100).toFixed(1)}%)`}}} } });
+
+  mk('cExpenseCum',{ type:'bar', data:{ labels:d.exp.labels,
+    datasets:[{ data:d.exp.data, backgroundColor:C.link, borderRadius:5 }] },
+    options:{ indexAxis:'y',responsive:true,maintainAspectRatio:false, plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>yen(c.parsed.x)}}},
+      scales:{ x:fmtAxis, y:{grid:{display:false},ticks:{color:'#23418c',font:{size:11}}} } } });
+
+  document.getElementById('insightsCum').innerHTML = d.note;
+}
+
+drawCur();
+</script>
+</body>
+</html>

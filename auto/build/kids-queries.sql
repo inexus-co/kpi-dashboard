@@ -1,4 +1,4 @@
--- Inexus Kids 利用実績ダッシュボード — 日次取得クエリ（全6本）
+-- まなんでパズル 利用実績ダッシュボード — 日次取得クエリ（全6本）
 -- projectId: inexus-prod / location: asia-northeast1
 -- いずれも execute_sql_readonly で実行し、結果(JSON)を build/raw/<name>.json に保存する。
 

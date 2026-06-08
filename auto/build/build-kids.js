@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /*
  * build-kids.js
- * Inexus Kids 利用実績ダッシュボードの「内側HTML(平文)」を生成する。
+ * まなんでパズル 利用実績ダッシュボードの「内側HTML(平文)」を生成する。
  * データは生成時に焼き込み、描画は Chart.js。暗号化は別途 encrypt-wrap.js が担当。
  * （既存の build-saiten.js / render-feedback.js と同じ「inner生成 → encrypt-wrap」方式）
  *
@@ -108,7 +108,7 @@ const TEMPLATE = String.raw`<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Inexus Kids 利用実績ダッシュボード</title>
+<title>まなんでパズル 利用実績ダッシュボード</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <style>
   :root { color-scheme: light; }
@@ -138,7 +138,7 @@ const TEMPLATE = String.raw`<!DOCTYPE html>
 <body>
 <div class="wrap">
   <header>
-    <h1>Inexus Kids 利用実績ダッシュボード</h1>
+    <h1>まなんでパズル 利用実績ダッシュボード</h1>
     <div class="sub">BigQuery <code>inexus-prod.kids_jp</code> の日次集計（毎日自動更新）</div>
     <div class="asof" id="asof"></div>
   </header>

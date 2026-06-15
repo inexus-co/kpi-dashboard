@@ -3,6 +3,8 @@
 # 同時刻に複数Routineが走っても競合しないよう pull --rebase + リトライでpushする。
 # push成功後は作業ブランチを同期（stop hook対策）し、7日より古いclaude/*ブランチを掃除する。
 set -euo pipefail
+# push許可OFF / GITHUB_PAT未設定時に対話プロンプトで固まらず即失敗させる（忘れやすい罠の早期検知）
+export GIT_TERMINAL_PROMPT=0
 MSG="${1:?usage: git-push-retry.sh <msg> <files...>}"; shift
 ROOT="$(git rev-parse --show-toplevel)"; cd "$ROOT"
 git config user.email "noreply@anthropic.com"
@@ -47,4 +49,6 @@ for i in 1 2 3 4 5; do
   fi
   echo "push retry $i"; sleep $((RANDOM % 10 + 5))
 done
-echo "push failed after retries"; exit 1
+echo "push failed after retries" >&2
+echo "  ヒント: Routineの権限タブで「git push許可」がONか、または環境変数 GITHUB_PAT（書き込み権限）が設定されているか確認してください。" >&2
+exit 1

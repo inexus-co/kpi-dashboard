@@ -145,9 +145,6 @@ def parse(path):
     return {'series': series, 'meta': META, 'reviews': reviews,
             'manapuzuAndroid': mana_android}
 
-def latest_meta(blocks_data):
-    pass
-
 def build(data, out_path):
     # 期間ラベル
     all_dates = sorted({p['date'] for s in data['series'].values() for p in s})

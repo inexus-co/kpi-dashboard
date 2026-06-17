@@ -13,5 +13,5 @@ node $B/render-puzzle.js $B/templates/puzzle-feedback-template.html $C/puzzle_re
 echo "[2/3] encrypt + wrap"
 node $B/encrypt-wrap.js $C/puzzle-inner.html puzzle-feedback.html "$DASHBOARD_PASSWORD" "まなんでパズル フィードバック ダッシュボード（要パスワード）"
 echo "[3/3] reseal + push"
-tar -c -C auto cache/slack_archive/C08RCL7P5PA.txt cache/slack_archive/C08RCL7P5PA.meta.json | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -k "$CACHE_KEY" -out auto/cache.enc
-bash $B/git-push-retry.sh "Update まなんでパズル フィードバックダッシュボード (${DNOW})" puzzle-feedback.html auto/cache.enc
+tar -c -C auto cache/slack_archive/C08RCL7P5PA.txt cache/slack_archive/C08RCL7P5PA.meta.json | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -k "$CACHE_KEY" -out auto/cache-puzzle.enc
+bash $B/git-push-retry.sh "Update まなんでパズル フィードバックダッシュボード (${DNOW})" puzzle-feedback.html auto/cache-puzzle.enc

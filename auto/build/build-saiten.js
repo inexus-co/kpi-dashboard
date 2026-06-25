@@ -5,14 +5,16 @@
  * ビルド時に Slackテキストをパースして DATA を作り、それだけを焼き込む（生テキストは焼き込まない＝軽量）。
  * 描画ロジック（buildLayout/drawCharts）はアーティファクトのまま使う。
  *
- * 使い方: node build-saiten.js <artifact.html> <slack_text.txt> <out_inner.html> [updatedStr]
+ * 使い方: node build-saiten.js <artifact.html> <slack_text.txt> <out_inner.html> [updatedStr] [ai_saiten.json]
  */
 const fs = require('fs');
-const [,, tplPath, textPath, outPath, updatedArg] = process.argv;
-if (!tplPath || !textPath || !outPath) { console.error('args: <artifact.html> <slack_text.txt> <out.html> [updated]'); process.exit(1); }
+const [,, tplPath, textPath, outPath, updatedArg, aiArg] = process.argv;
+if (!tplPath || !textPath || !outPath) { console.error('args: <artifact.html> <slack_text.txt> <out.html> [updated] [ai.json]'); process.exit(1); }
 
 const rawText = fs.readFileSync(textPath, 'utf8');
 const updated = updatedArg || new Date().toLocaleString('ja-JP', { timeZone:'Asia/Tokyo' });
+// AIサマリー（良い点 / 課題）。存在しなければ空（ダッシュボード側でカード非表示）。
+const ai = (aiArg && fs.existsSync(aiArg)) ? JSON.parse(fs.readFileSync(aiArg, 'utf8')) : { pros: [], cons: [] };
 
 // ===== アーティファクトと同一のパースロジック（Nodeで実行）=====
 const num = s => (s != null && s !== "") ? parseFloat(String(s).replace(/,/g, "")) : null;
@@ -74,9 +76,13 @@ html = html.replace(/<script type="application\/json" id="cowork-artifact-meta">
 
 // 2) 焼き込みデータを本体scriptの先頭に注入（</script>対策で < をエスケープ）
 const dataJson = JSON.stringify(DATA).replace(/</g,'\\u003c');
+const aiJson = JSON.stringify(ai).replace(/</g,'\\u003c');
 const inject =
   'const BAKED_DATA = ' + dataJson + ';\n' +
-  'const BAKED_UPDATED = ' + JSON.stringify(updated) + ';\n';
+  'const BAKED_UPDATED = ' + JSON.stringify(updated) + ';\n' +
+  'const BAKED_AI = ' + aiJson + ';\n' +
+  'window.cowork = { callMcpTool: async () => ({ messages:"", pagination_info:"" }),\n' +
+  '  askClaude: async () => JSON.stringify(BAKED_AI) };\n';
 const anchor = 'const CHANNEL_ID = "C08R1MRSXDF";';
 if (html.indexOf(anchor) === -1) { console.error('anchor not found (CHANNEL_ID)'); process.exit(2); }
 html = html.replace(anchor, inject + anchor);
@@ -108,4 +114,5 @@ const notify={
 fs.writeFileSync(require('path').join(require('path').dirname(outPath),'saiten_notify.json'), JSON.stringify(notify));
 
 console.log(JSON.stringify({ out: outPath, bytes: html.length, saitenDays: DATA.saiten.length, puzzleDays: DATA.puzzle.length,
+  ai: { pros: (ai.pros||[]).length, cons: (ai.cons||[]).length },
   latestSaiten: sL||null, latestPuzzle: pL||null, notify }, null, 0));

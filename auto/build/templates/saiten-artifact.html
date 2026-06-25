@@ -73,6 +73,23 @@
   .loading, .error { padding: 40px 20px; text-align: center; color: var(--muted); font-size: 14px; }
   .error { color: var(--bad); }
   .footnote { color: var(--muted); font-size: 11px; margin-top: 20px; line-height: 1.5; }
+
+  /* AIサマリー */
+  .aicard { margin-bottom: 22px; background: linear-gradient(135deg,#f3f1ff,#eef5ff); border: 1px solid #dcd9f5; border-radius: var(--radius); padding: 15px 18px; box-shadow: var(--shadow); }
+  .aihead { font-size: 12.5px; font-weight: 700; color: #5b4bd6; display: flex; align-items: center; gap: 8px; }
+  .aibadge { font-size: 10.5px; font-weight: 600; color: #6b6f86; background: #fff; border: 1px solid #ddd9f0; border-radius: 999px; padding: 1px 8px; }
+  .aibody { margin-top: 8px; font-size: 13.5px; line-height: 1.7; color: #2a2f45; white-space: pre-wrap; }
+  .aidots { color: #8a86b8; }
+  .aicols { margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .aicol { background: #fff; border: 1px solid #e4e1f2; border-radius: 10px; padding: 11px 14px; }
+  .aicol.pro { border-left: 4px solid var(--good); }
+  .aicol.con { border-left: 4px solid var(--bad); }
+  .aicoltitle { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+  .aicol.pro .aicoltitle { color: var(--good); }
+  .aicol.con .aicoltitle { color: var(--bad); }
+  .aicol ul { margin: 0; padding-left: 18px; }
+  .aicol li { font-size: 13px; line-height: 1.6; color: #2a2f45; margin-bottom: 4px; }
+  @media (max-width: 860px){ .aicols { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -227,6 +244,84 @@ function lineCfg(labels, datasets, opts) {
 }
 function mkChart(id, cfg) { const el = document.getElementById(id); if (el) CHARTS.push(new Chart(el, cfg)); }
 
+// ---- AIサマリー（良い点 / 課題）----
+function aiText(res){
+  if (typeof res === "string") return res;
+  if (res && typeof res.text === "string") return res.text;
+  if (res && typeof res.content === "string") return res.content;
+  if (res && Array.isArray(res.content)) return res.content.map(c=>c.text||"").join("");
+  return "";
+}
+function parseProsCons(t){
+  if (!t) return null;
+  let s = t.trim().replace(/^```(?:json)?/i,"").replace(/```$/,"").trim();
+  const a = s.indexOf("{"), b = s.lastIndexOf("}");
+  if (a !== -1 && b !== -1) s = s.slice(a, b+1);
+  try {
+    const o = JSON.parse(s);
+    const pros = Array.isArray(o.pros) ? o.pros : (Array.isArray(o.良い点) ? o.良い点 : []);
+    const cons = Array.isArray(o.cons) ? o.cons : (Array.isArray(o.課題) ? o.課題 : []);
+    return { pros, cons };
+  } catch(e) { return null; }
+}
+function fillList(id, items, emptyMsg){
+  const ul = document.getElementById(id);
+  if (!ul) return;
+  ul.innerHTML = (items && items.length)
+    ? items.map(x => "<li>" + String(x).replace(/[<>]/g, m=>m==="<"?"&lt;":"&gt;") + "</li>").join("")
+    : '<li style="color:var(--muted)">' + emptyMsg + "</li>";
+}
+function buildAIStats(){
+  const S = DATA.saiten, P = DATA.puzzle;
+  const sL = S[S.length-1]||{}, sP = S[S.length-2]||{};
+  const pL = P[P.length-1]||{}, pP = P[P.length-2]||{};
+  const lr = d => (d.like!=null && d.dislike!=null && (d.like+d.dislike)>0) ? +(d.like/(d.like+d.dislike)*100).toFixed(1) : null;
+  const ago = (arr,n) => arr[Math.max(0, arr.length-1-n)] || {};
+  const paid = (sL.pro||0)+(sL.premium||0);
+  return {
+    採点くん: {
+      登録ユーザー: sL.registered, 登録前日比: (sL.registered!=null&&sP.registered!=null)?sL.registered-sP.registered:null,
+      登録30日前: ago(S,30).registered, 登録90日前: ago(S,90).registered,
+      課金: paid, Pro: sL.pro, Premium: sL.premium,
+      課金率パーセント: sL.registered ? +(paid/sL.registered*100).toFixed(1) : null,
+      当日採点数: sL.dayScore, アクティブ: sL.active, 新規登録: sL.newUsers,
+      いいね率: lr(sL), いいね: sL.like, よくないね: sL.dislike, 総採点数: sL.totalScore
+    },
+    まなんでパズル: {
+      総ユーザー: pL.totalUsers, 総ユーザー前日比: (pL.totalUsers!=null&&pP.totalUsers!=null)?pL.totalUsers-pP.totalUsers:null, 総ユーザー30日前: ago(P,30).totalUsers,
+      総アカウント: pL.totalAccounts, 総アカウント前日比: (pL.totalAccounts!=null&&pP.totalAccounts!=null)?pL.totalAccounts-pP.totalAccounts:null, 総アカウント30日前: ago(P,30).totalAccounts,
+      当日新規ユーザー: pL.newUsers,
+      アカウント化率パーセント: pL.totalUsers ? +((pL.totalAccounts/pL.totalUsers)*100).toFixed(1) : null
+    }
+  };
+}
+async function loadAISummary(){
+  const card = document.getElementById("aicard");
+  if (!card) return;
+  const body = document.getElementById("aiBody"), cols = document.getElementById("aiCols");
+  if (!(window.cowork && typeof window.cowork.askClaude === "function")) { card.style.display = "none"; return; }
+  card.style.display = "block"; body.style.display = "block"; cols.style.display = "none";
+  body.innerHTML = '<span class="aidots">分析中…</span>';
+  const prompt = "あなたはプロダクト分析アシスタントです。次のJSONは学習採点アプリ「採点くん」と知育アプリ「まなんでパズル」のKPI集計（最新値・前日比・期間比較）です。"
+    + "経営層と開発チーム向けに、日本語で『良い点(pros)』と『課題(cons)』を箇条書きで整理してください。"
+    + "登録・課金・いいね率・アクティビティ・ユーザー/アカウント増加などの具体的な数値や傾向に触れ、課題には対応の優先度がわかる表現を含めてください。"
+    + "各項目は1文・40〜80文字程度、prosとconsはそれぞれ2〜4個。"
+    + "出力は次の形式のJSONのみ（前後に文章やコードブロックを付けない）: {\"pros\":[\"...\"],\"cons\":[\"...\"]}。";
+  try {
+    const res = await window.cowork.askClaude(prompt, [buildAIStats()]);
+    const pc = parseProsCons(aiText(res).trim());
+    if (pc && (pc.pros.length || pc.cons.length)) {
+      fillList("aiPros", pc.pros, "目立った良い点はありません");
+      fillList("aiCons", pc.cons, "目立った課題はありません 🎉");
+      body.style.display = "none"; cols.style.display = "grid";
+    } else {
+      card.style.display = "none";
+    }
+  } catch (e) {
+    card.style.display = "none";
+  }
+}
+
 function buildLayout() {
   const S = DATA.saiten, P = DATA.puzzle;
   const content = document.getElementById("content");
@@ -241,7 +336,15 @@ function buildLayout() {
   const paid = (sLast.pro||0)+(sLast.premium||0), paidPrev = (sPrev.pro||0)+(sPrev.premium||0);
   const likeRate = (sLast.like!=null && sLast.dislike!=null && (sLast.like+sLast.dislike)>0) ? (sLast.like/(sLast.like+sLast.dislike)*100) : null;
 
-  let html = "";
+  let html = `
+    <div class="aicard" id="aicard" style="display:none">
+      <div class="aihead">🤖 AIサマリー <span class="aibadge">Claude</span></div>
+      <div class="aibody" id="aiBody"><span class="aidots">分析中…</span></div>
+      <div class="aicols" id="aiCols" style="display:none">
+        <div class="aicol pro"><div class="aicoltitle">👍 良い点（Pros）</div><ul id="aiPros"></ul></div>
+        <div class="aicol con"><div class="aicoltitle">👎 課題（Cons）</div><ul id="aiCons"></ul></div>
+      </div>
+    </div>`;
   if (S.length) {
     html += `<div class="app-section">
       <div class="app-head"><span class="dot" style="background:${palette.indigo}"></span><h2>採点くん</h2><span class="badge">最新 ${sLast.date?shortDate(sLast.date):"—"}</span></div>
@@ -381,6 +484,7 @@ async function init() {
     if (![7,30,180].includes(saved)) { saved = 30; [...tabs.children].forEach(b => b.classList.toggle("active", b.dataset.days === "30")); }
     drawCharts(saved);
     document.getElementById("updated").textContent = "最終更新: " + new Date().toLocaleString("ja-JP");
+    await loadAISummary();
   } catch (e) {
     document.getElementById("content").innerHTML = '<div class="error">データ取得に失敗しました: ' + (e && e.message ? e.message : e) + '</div>';
   }

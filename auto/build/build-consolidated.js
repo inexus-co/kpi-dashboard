@@ -33,6 +33,7 @@ const DASHBOARDS = [
   { id: 'saiten-fb',  file: 'saiten-feedback.html',       label: '採点くん フィードバック' },
   { id: 'puzzle-fb',  file: 'puzzle-feedback.html',       label: 'まなんでパズル フィードバック' },
   { id: 'kids',       file: 'kids-usage.html',            label: 'まなんでパズル 利用実績' },
+  { id: 'web',        file: 'web-analytics.html',         label: 'Web分析(GA4)' },
   { id: 'social',     file: 'social-analytics.html',      label: 'ソーシャル分析(YouTube)' },
   { id: 'competitor', file: 'competitor-monitoring.html', label: '競合アプリ定点観測' },
   { id: 'freee',      file: 'freee.html',                 label: '経営(freee)' },

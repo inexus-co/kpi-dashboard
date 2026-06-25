@@ -78,6 +78,7 @@
   .aicard { margin-bottom: 22px; background: linear-gradient(135deg,#f3f1ff,#eef5ff); border: 1px solid #dcd9f5; border-radius: var(--radius); padding: 15px 18px; box-shadow: var(--shadow); }
   .aihead { font-size: 12.5px; font-weight: 700; color: #5b4bd6; display: flex; align-items: center; gap: 8px; }
   .aibadge { font-size: 10.5px; font-weight: 600; color: #6b6f86; background: #fff; border: 1px solid #ddd9f0; border-radius: 999px; padding: 1px 8px; }
+  .aiperiod { font-size: 10.5px; font-weight: 600; color: #8a86b8; margin-left: auto; }
   .aibody { margin-top: 8px; font-size: 13.5px; line-height: 1.7; color: #2a2f45; white-space: pre-wrap; }
   .aidots { color: #8a86b8; }
   .aicols { margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
@@ -271,54 +272,87 @@ function fillList(id, items, emptyMsg){
     ? items.map(x => "<li>" + String(x).replace(/[<>]/g, m=>m==="<"?"&lt;":"&gt;") + "</li>").join("")
     : '<li style="color:var(--muted)">' + emptyMsg + "</li>";
 }
-function buildAIStats(){
-  const S = DATA.saiten, P = DATA.puzzle;
-  const sL = S[S.length-1]||{}, sP = S[S.length-2]||{};
-  const pL = P[P.length-1]||{}, pP = P[P.length-2]||{};
+// 指定期間(直近days日)の窓に絞ったKPI集計を作る。AIサマリーは期間ごとに切り替わる。
+function buildAIStats(days){
+  const S = filterByDays(DATA.saiten, days), P = filterByDays(DATA.puzzle, days);
+  const sL = S[S.length-1]||{}, sF = S[0]||{};
+  const pL = P[P.length-1]||{}, pF = P[0]||{};
   const lr = d => (d.like!=null && d.dislike!=null && (d.like+d.dislike)>0) ? +(d.like/(d.like+d.dislike)*100).toFixed(1) : null;
-  const ago = (arr,n) => arr[Math.max(0, arr.length-1-n)] || {};
-  const paid = (sL.pro||0)+(sL.premium||0);
+  const vals = (arr,k) => arr.map(d => d[k]).filter(v => v!=null);
+  const avg = a => a.length ? +(a.reduce((x,y)=>x+y,0)/a.length).toFixed(1) : null;
+  const sum = a => a.length ? a.reduce((x,y)=>x+y,0) : null;
+  const ds = vals(S,"dayScore"), nu = vals(S,"newUsers"), ac = vals(S,"active");
+  const paid = (sL.pro||0)+(sL.premium||0), paidF = (sF.pro||0)+(sF.premium||0);
   return {
+    対象期間: "直近" + days + "日",
     採点くん: {
-      登録ユーザー: sL.registered, 登録前日比: (sL.registered!=null&&sP.registered!=null)?sL.registered-sP.registered:null,
-      登録30日前: ago(S,30).registered, 登録90日前: ago(S,90).registered,
-      課金: paid, Pro: sL.pro, Premium: sL.premium,
+      登録ユーザー: sL.registered, 期間始点の登録: sF.registered,
+      期間内の登録増減: (sL.registered!=null&&sF.registered!=null)?sL.registered-sF.registered:null,
+      課金: paid, 期間始点の課金: paidF, Pro: sL.pro, Premium: sL.premium,
       課金率パーセント: sL.registered ? +(paid/sL.registered*100).toFixed(1) : null,
-      当日採点数: sL.dayScore, アクティブ: sL.active, 新規登録: sL.newUsers,
-      いいね率: lr(sL), いいね: sL.like, よくないね: sL.dislike, 総採点数: sL.totalScore
+      いいね率: lr(sL), 期間始点のいいね率: lr(sF),
+      当日採点数: sL.dayScore, 期間平均採点数: avg(ds), 期間最小採点数: ds.length?Math.min(...ds):null, 期間最大採点数: ds.length?Math.max(...ds):null,
+      新規登録の日平均: avg(nu), 新規登録の期間合計: sum(nu), アクティブ平均: avg(ac),
+      総採点数: sL.totalScore, 期間内の総採点数増: (sL.totalScore!=null&&sF.totalScore!=null)?sL.totalScore-sF.totalScore:null
     },
     まなんでパズル: {
-      総ユーザー: pL.totalUsers, 総ユーザー前日比: (pL.totalUsers!=null&&pP.totalUsers!=null)?pL.totalUsers-pP.totalUsers:null, 総ユーザー30日前: ago(P,30).totalUsers,
-      総アカウント: pL.totalAccounts, 総アカウント前日比: (pL.totalAccounts!=null&&pP.totalAccounts!=null)?pL.totalAccounts-pP.totalAccounts:null, 総アカウント30日前: ago(P,30).totalAccounts,
+      総ユーザー: pL.totalUsers, 期間内の総ユーザー増減: (pL.totalUsers!=null&&pF.totalUsers!=null)?pL.totalUsers-pF.totalUsers:null,
+      総アカウント: pL.totalAccounts, 期間内のアカウント増減: (pL.totalAccounts!=null&&pF.totalAccounts!=null)?pL.totalAccounts-pF.totalAccounts:null,
       当日新規ユーザー: pL.newUsers,
       アカウント化率パーセント: pL.totalUsers ? +((pL.totalAccounts/pL.totalUsers)*100).toFixed(1) : null
     }
   };
 }
-async function loadAISummary(){
+// 焼き込み済み(BAKED_AI)から該当期間のサマリーを取り出す。旧フラット形式にもフォールバック。
+function bakedAIFor(days){
+  if (typeof BAKED_AI === "undefined" || !BAKED_AI) return null;
+  const has = o => o && (Array.isArray(o.pros)||Array.isArray(o.cons)) && ((o.pros&&o.pros.length)||(o.cons&&o.cons.length));
+  const v = BAKED_AI[String(days)] || BAKED_AI[days];
+  if (has(v)) return { pros: v.pros||[], cons: v.cons||[] };
+  if (has(BAKED_AI)) return { pros: BAKED_AI.pros||[], cons: BAKED_AI.cons||[] };
+  return null;
+}
+let AI_REQ = 0;            // 最新リクエストID（タブ高速切替時の競合防止）
+const AI_CACHE = {};       // ライブ生成結果の期間別キャッシュ
+function showAI(pc){
+  const card = document.getElementById("aicard"), body = document.getElementById("aiBody"), cols = document.getElementById("aiCols");
+  card.style.display = "block";
+  fillList("aiPros", pc.pros, "目立った良い点はありません");
+  fillList("aiCons", pc.cons, "目立った課題はありません 🎉");
+  body.style.display = "none"; cols.style.display = "grid";
+}
+async function loadAISummary(days){
   const card = document.getElementById("aicard");
   if (!card) return;
   const body = document.getElementById("aiBody"), cols = document.getElementById("aiCols");
+  const lbl = document.getElementById("aiPeriod");
+  if (lbl) lbl.textContent = "対象期間: 直近" + days + "日";
+  // 1) 焼き込み済みの期間別サマリーがあれば即時表示（公開版はこの経路）
+  const baked = bakedAIFor(days);
+  if (baked) { showAI(baked); return; }
+  // 2) ライブ(askClaude)生成。期間ごとにキャッシュして再取得を避ける
   if (!(window.cowork && typeof window.cowork.askClaude === "function")) { card.style.display = "none"; return; }
+  if (AI_CACHE[days]) { showAI(AI_CACHE[days]); return; }
   card.style.display = "block"; body.style.display = "block"; cols.style.display = "none";
   body.innerHTML = '<span class="aidots">分析中…</span>';
-  const prompt = "あなたはプロダクト分析アシスタントです。次のJSONは学習採点アプリ「採点くん」と知育アプリ「まなんでパズル」のKPI集計（最新値・前日比・期間比較）です。"
-    + "経営層と開発チーム向けに、日本語で『良い点(pros)』と『課題(cons)』を箇条書きで整理してください。"
-    + "登録・課金・いいね率・アクティビティ・ユーザー/アカウント増加などの具体的な数値や傾向に触れ、課題には対応の優先度がわかる表現を含めてください。"
+  const reqId = ++AI_REQ;
+  const prompt = "あなたはプロダクト分析アシスタントです。次のJSONは学習採点アプリ「採点くん」と知育アプリ「まなんでパズル」の、ある集計期間(対象期間フィールド参照)に絞ったKPI集計です。"
+    + "経営層と開発チーム向けに、その期間の動きに着目した日本語の『良い点(pros)』と『課題(cons)』を箇条書きで整理してください。"
+    + "期間内の登録・課金・いいね率・アクティビティ・ユーザー/アカウント増加などの具体的な数値や傾向に触れ、課題には対応の優先度がわかる表現を含めてください。"
     + "各項目は1文・40〜80文字程度、prosとconsはそれぞれ2〜4個。"
     + "出力は次の形式のJSONのみ（前後に文章やコードブロックを付けない）: {\"pros\":[\"...\"],\"cons\":[\"...\"]}。";
   try {
-    const res = await window.cowork.askClaude(prompt, [buildAIStats()]);
+    const res = await window.cowork.askClaude(prompt, [buildAIStats(days)]);
+    if (reqId !== AI_REQ) return;   // 待機中に期間が切り替わったら破棄
     const pc = parseProsCons(aiText(res).trim());
     if (pc && (pc.pros.length || pc.cons.length)) {
-      fillList("aiPros", pc.pros, "目立った良い点はありません");
-      fillList("aiCons", pc.cons, "目立った課題はありません 🎉");
-      body.style.display = "none"; cols.style.display = "grid";
+      AI_CACHE[days] = pc;
+      showAI(pc);
     } else {
       card.style.display = "none";
     }
   } catch (e) {
-    card.style.display = "none";
+    if (reqId === AI_REQ) card.style.display = "none";
   }
 }
 
@@ -338,7 +372,7 @@ function buildLayout() {
 
   let html = `
     <div class="aicard" id="aicard" style="display:none">
-      <div class="aihead">🤖 AIサマリー <span class="aibadge">Claude</span></div>
+      <div class="aihead">🤖 AIサマリー <span class="aibadge">Claude</span> <span class="aiperiod" id="aiPeriod"></span></div>
       <div class="aibody" id="aiBody"><span class="aidots">分析中…</span></div>
       <div class="aicols" id="aiCols" style="display:none">
         <div class="aicol pro"><div class="aicoltitle">👍 良い点（Pros）</div><ul id="aiPros"></ul></div>
@@ -452,7 +486,9 @@ function wireTabs() {
     const btn = e.target.closest("button"); if (!btn) return;
     [...tabs.children].forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
-    drawCharts(parseInt(btn.dataset.days, 10));
+    const days = parseInt(btn.dataset.days, 10);
+    drawCharts(days);
+    loadAISummary(days);
     try { localStorage.setItem("kpi_range", btn.dataset.days); } catch (e) {}
   });
 }
@@ -484,7 +520,7 @@ async function init() {
     if (![7,30,180].includes(saved)) { saved = 30; [...tabs.children].forEach(b => b.classList.toggle("active", b.dataset.days === "30")); }
     drawCharts(saved);
     document.getElementById("updated").textContent = "最終更新: " + new Date().toLocaleString("ja-JP");
-    await loadAISummary();
+    await loadAISummary(saved);
   } catch (e) {
     document.getElementById("content").innerHTML = '<div class="error">データ取得に失敗しました: ' + (e && e.message ? e.message : e) + '</div>';
   }

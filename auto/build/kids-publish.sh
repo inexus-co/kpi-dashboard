@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # まなんでパズル 利用実績ダッシュボード（kids-usage.html）生成・暗号化・push（repoルートで実行）
 # 前提: auto/cache/kids_raw/ に BigQuery 6本の結果JSON（cumulative/platform/new_users/dau/creators/engagement）が保存済み
+#       任意で auto/cache/ai_kids.json（AIサマリー {pros,cons}）。無ければAIカードは非表示。
 # 必要環境変数: DASHBOARD_PASSWORD
 set -euo pipefail
 : "${DASHBOARD_PASSWORD:?}"
@@ -10,7 +11,7 @@ NOW="$(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST')"
 DNOW="$(TZ=Asia/Tokyo date '+%Y-%m-%d')"
 
 echo "[1/3] build kids inner"
-node $B/build-kids.js $C/kids_raw $C/kids-inner.html "$NOW"
+node $B/build-kids.js $C/kids_raw $C/kids-inner.html "$NOW" $C/ai_kids.json
 
 echo "[2/3] encrypt + wrap -> kids-usage.html"
 node $B/encrypt-wrap.js $C/kids-inner.html kids-usage.html "$DASHBOARD_PASSWORD" "まなんでパズル 利用実績ダッシュボード（要パスワード）"

@@ -7,17 +7,18 @@
  *
  * 入力 : <raw_dir>/<name>.json  … BigQuery execute_sql_readonly の返却JSONそのまま
  *        cumulative / platform / new_users / dau / creators / engagement
+ *        [ai_kids.json]         … AIサマリー {pros:[...], cons:[...]}（任意・無ければカード非表示）
  * 出力 : <out_inner.html>        … 平文の自己完結ダッシュボードHTML
  *
- * 使い方: node auto/build/build-kids.js <raw_dir> <out_inner.html> [updated]
+ * 使い方: node auto/build/build-kids.js <raw_dir> <out_inner.html> [updated] [ai_kids.json]
  */
 "use strict";
 const fs = require("fs");
 const path = require("path");
 
-const [, , RAW_DIR, OUT, updatedArg] = process.argv;
+const [, , RAW_DIR, OUT, updatedArg, aiArg] = process.argv;
 if (!RAW_DIR || !OUT) {
-  console.error("usage: node build-kids.js <raw_dir> <out_inner.html> [updated]");
+  console.error("usage: node build-kids.js <raw_dir> <out_inner.html> [updated] [ai_kids.json]");
   process.exit(1);
 }
 
@@ -131,8 +132,21 @@ const TEMPLATE = String.raw`<!DOCTYPE html>
   .card .hint { color:#9097a1; font-size:11px; margin:0 0 12px; }
   .chartbox { position:relative; height:240px; }
   .chartbox.sm { height:220px; }
+  .aicard { background:#fff; border:1px solid #e7e9ee; border-radius:12px; padding:16px 18px; box-shadow:0 1px 2px rgba(16,24,40,.04); margin:22px 0; }
+  .aihead { display:flex; align-items:center; gap:8px; font-size:14px; font-weight:700; margin:0 0 4px; }
+  .aibadge { font-size:11px; font-weight:600; color:#6b7280; background:#f1f3f5; border:1px solid #e7e9ee; border-radius:999px; padding:2px 9px; }
+  .ainote { color:#9097a1; font-size:11px; margin:0 0 12px; }
+  .aicols { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .aicol { border-radius:10px; padding:12px 14px; }
+  .aicol.pro { background:#f0fdf4; border:1px solid #dcfce7; }
+  .aicol.con { background:#fffbeb; border:1px solid #fef3c7; }
+  .aicoltitle { font-size:13px; font-weight:700; margin:0 0 8px; }
+  .aicol.pro .aicoltitle { color:#15803d; }
+  .aicol.con .aicoltitle { color:#b45309; }
+  .aicol ul { margin:0; padding-left:18px; }
+  .aicol li { font-size:12.5px; line-height:1.7; color:#374151; margin-bottom:4px; }
   footer { color:#9097a1; font-size:11px; margin-top:28px; text-align:center; }
-  @media (max-width:760px){ .charts { grid-template-columns:1fr; } }
+  @media (max-width:760px){ .charts { grid-template-columns:1fr; } .aicols { grid-template-columns:1fr; } }
 </style>
 </head>
 <body>
@@ -143,6 +157,14 @@ const TEMPLATE = String.raw`<!DOCTYPE html>
     <div class="asof" id="asof"></div>
   </header>
   <div class="grid kpis" id="kpis"></div>
+  <div class="aicard" id="aicard" style="display:none">
+    <div class="aihead">🤖 AIサマリー <span class="aibadge">自動生成</span></div>
+    <p class="ainote">日次集計データをもとに自動評価（数値に基づく所見）</p>
+    <div class="aicols">
+      <div class="aicol pro"><div class="aicoltitle">📈 好調な点・ハイライト</div><ul id="aiPros"></ul></div>
+      <div class="aicol con"><div class="aicoltitle">⚠️ 注意したい点・課題</div><ul id="aiCons"></ul></div>
+    </div>
+  </div>
   <div class="grid charts">
     <div class="card"><h3>累計ユーザー数の推移</h3><p class="hint">登録ユーザーの累計（全プラットフォーム）・直近90日</p><div class="chartbox"><canvas id="cumChart"></canvas></div></div>
     <div class="card"><h3>プラットフォーム別ユーザー構成</h3><p class="hint">最新時点の累計ユーザーの内訳</p><div class="chartbox"><canvas id="platChart"></canvas></div></div>
@@ -165,6 +187,20 @@ document.getElementById("kpis").innerHTML =
   card("新規ユーザー / 日", fmt(k.new_latest), "7日平均 <strong>"+fmt(k.new_avg7)+"</strong>") +
   card("DAU（直近）", fmt(k.dau_latest), "7日平均 <strong>"+fmt(k.dau_avg7)+"</strong>") +
   card("作品クリエイター累計", fmt(k.creator_base), "全ユーザーの <strong>"+k.creator_rate+"%</strong>");
+(function(){
+  const ai = D.ai || { pros:[], cons:[] };
+  const esc = s => String(s).replace(/[<>&]/g, m => ({ "<":"&lt;", ">":"&gt;", "&":"&amp;" }[m]));
+  const fill = (id, items, empty) => {
+    document.getElementById(id).innerHTML = (items && items.length)
+      ? items.map(x => "<li>"+esc(x)+"</li>").join("")
+      : '<li style="color:#9aa1ad">'+empty+"</li>";
+  };
+  if ((ai.pros && ai.pros.length) || (ai.cons && ai.cons.length)) {
+    fill("aiPros", ai.pros, "特筆すべき好調点はありません");
+    fill("aiCons", ai.cons, "目立った課題はありません 🎉");
+    document.getElementById("aicard").style.display = "block";
+  }
+})();
 const base = (extra={}) => Object.assign({ responsive:true, maintainAspectRatio:false,
   plugins:{ legend:{ labels:{ boxWidth:12, font:{size:11} } } },
   scales:{ x:{ grid:{display:false}, ticks:{font:{size:10}, maxRotation:0, autoSkip:true, maxTicksLimit:10} }, y:{ beginAtZero:true, grid:{color:"#eef0f3"}, ticks:{font:{size:10}} } } }, extra);
@@ -195,11 +231,14 @@ new Chart(projChart, { type:"line", data:{ labels:D.engagement.labels, datasets:
 function main() {
   const updated = updatedArg || new Date().toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
   const data = buildData(updated);
+  // AIサマリー（好調な点 pros / 注意点 cons）。存在しなければ空（ダッシュボード側でカード非表示）。
+  data.ai = (aiArg && fs.existsSync(aiArg)) ? JSON.parse(fs.readFileSync(aiArg, "utf8")) : { pros: [], cons: [] };
   const html = TEMPLATE.replace("/*__DATA__*/", JSON.stringify(data));
   fs.mkdirSync(path.dirname(OUT), { recursive: true });
   fs.writeFileSync(OUT, html, "utf8");
   const k = data.kpi;
-  console.log(`[OK] inner written: ${OUT} (${html.length} bytes)`);
+  const ai = data.ai;
+  console.log(`[OK] inner written: ${OUT} (${html.length} bytes) [AI pros:${(ai.pros||[]).length} cons:${(ai.cons||[]).length}]`);
   console.log(`SUMMARY: 最終データ日 ${data.last_date} ｜ 累計 ${k.total_users.toLocaleString("ja-JP")} (+${k.growth30}/30d) ｜ DAU ${k.dau_latest} (7日平均 ${k.dau_avg7}) ｜ 新規 ${k.new_latest}/日`);
 }
 main();

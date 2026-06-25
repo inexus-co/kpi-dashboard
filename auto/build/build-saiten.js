@@ -13,8 +13,29 @@ if (!tplPath || !textPath || !outPath) { console.error('args: <artifact.html> <s
 
 const rawText = fs.readFileSync(textPath, 'utf8');
 const updated = updatedArg || new Date().toLocaleString('ja-JP', { timeZone:'Asia/Tokyo' });
-// AIサマリー（良い点 / 課題）。存在しなければ空（ダッシュボード側でカード非表示）。
-const ai = (aiArg && fs.existsSync(aiArg)) ? JSON.parse(fs.readFileSync(aiArg, 'utf8')) : { pros: [], cons: [] };
+// AIサマリー（良い点 / 課題）を期間別(7 / 30 / 180日)に焼き込む。存在しなければ空（ダッシュボード側でカード非表示）。
+// 受け付ける形式:
+//   新: { "7": {pros,cons}, "30": {pros,cons}, "180": {pros,cons} }
+//   旧: { pros, cons }（互換のため全期間に同内容を適用）
+const AI_PERIODS = ['7', '30', '180'];
+function normalizeAI(rawAi) {
+  if (!rawAi || typeof rawAi !== 'object') return {};
+  const hasPeriod = AI_PERIODS.some(k => rawAi[k] && (Array.isArray(rawAi[k].pros) || Array.isArray(rawAi[k].cons)));
+  if (hasPeriod) {
+    const out = {};
+    for (const k of AI_PERIODS) {
+      const v = rawAi[k];
+      if (v && (Array.isArray(v.pros) || Array.isArray(v.cons))) out[k] = { pros: v.pros || [], cons: v.cons || [] };
+    }
+    return out;
+  }
+  if (Array.isArray(rawAi.pros) || Array.isArray(rawAi.cons)) {
+    const flat = { pros: rawAi.pros || [], cons: rawAi.cons || [] };
+    return { '7': flat, '30': flat, '180': flat };
+  }
+  return {};
+}
+const ai = normalizeAI((aiArg && fs.existsSync(aiArg)) ? JSON.parse(fs.readFileSync(aiArg, 'utf8')) : null);
 
 // ===== アーティファクトと同一のパースロジック（Nodeで実行）=====
 const num = s => (s != null && s !== "") ? parseFloat(String(s).replace(/,/g, "")) : null;
@@ -82,7 +103,7 @@ const inject =
   'const BAKED_UPDATED = ' + JSON.stringify(updated) + ';\n' +
   'const BAKED_AI = ' + aiJson + ';\n' +
   'window.cowork = { callMcpTool: async () => ({ messages:"", pagination_info:"" }),\n' +
-  '  askClaude: async () => JSON.stringify(BAKED_AI) };\n';
+  '  askClaude: async () => JSON.stringify((BAKED_AI && (BAKED_AI["30"]||BAKED_AI["7"]||BAKED_AI["180"])) || {pros:[],cons:[]}) };\n';
 const anchor = 'const CHANNEL_ID = "C08R1MRSXDF";';
 if (html.indexOf(anchor) === -1) { console.error('anchor not found (CHANNEL_ID)'); process.exit(2); }
 html = html.replace(anchor, inject + anchor);
@@ -114,5 +135,5 @@ const notify={
 fs.writeFileSync(require('path').join(require('path').dirname(outPath),'saiten_notify.json'), JSON.stringify(notify));
 
 console.log(JSON.stringify({ out: outPath, bytes: html.length, saitenDays: DATA.saiten.length, puzzleDays: DATA.puzzle.length,
-  ai: { pros: (ai.pros||[]).length, cons: (ai.cons||[]).length },
+  ai: Object.fromEntries(Object.entries(ai).map(([k,v]) => [k, { pros: (v.pros||[]).length, cons: (v.cons||[]).length }])),
   latestSaiten: sL||null, latestPuzzle: pL||null, notify }, null, 0));

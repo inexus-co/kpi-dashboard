@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>インネクサス｜統合KPIダッシュボード</title>
+<style>
+:root{ color-scheme: light; }
+*{ box-sizing:border-box; }
+html,body{ height:100%; }
+body{
+  margin:0; display:flex; flex-direction:column; height:100vh; overflow:hidden;
+  font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Noto Sans JP","Segoe UI",sans-serif;
+  background:#f7f5f5; color:#23418c;
+}
+header.top{
+  flex:0 0 auto;
+  background:linear-gradient(135deg,#285ac8 0%,#1e46aa 100%);
+  color:#fff; padding:13px 20px 12px; box-shadow:0 4px 14px rgba(30,70,170,.18);
+}
+header.top h1{ margin:0; font-size:17px; font-weight:700; letter-spacing:.02em; }
+header.top .sub{ font-size:11.5px; opacity:.9; margin-top:3px; }
+header.top .meta{ font-size:11px; opacity:.82; margin-top:2px; }
+
+nav.tabs{
+  flex:0 0 auto; display:flex; gap:6px; padding:9px 16px 0; background:#eef2fb;
+  border-bottom:1px solid #d8e2f6; overflow-x:auto; scrollbar-width:thin;
+}
+nav.tabs::-webkit-scrollbar{ height:6px; }
+nav.tabs::-webkit-scrollbar-thumb{ background:#c7d6f3; border-radius:3px; }
+.tab{
+  flex:0 0 auto; border:1px solid #cdddf8; border-bottom:none; background:#fff; color:#1e46aa;
+  font-weight:700; font-size:12.5px; padding:8px 15px; border-radius:10px 10px 0 0; cursor:pointer;
+  white-space:nowrap; transition:.15s;
+}
+.tab:hover{ background:#ebf3ff; }
+.tab.active{ background:#285ac8; color:#fff; border-color:#285ac8; box-shadow:0 -2px 8px rgba(40,90,200,.12); }
+
+main.stage{ flex:1 1 auto; position:relative; background:#fff; }
+main.stage iframe{
+  position:absolute; inset:0; width:100%; height:100%; border:0; display:block; background:#fff;
+}
+.loading{
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  color:#7a8aa8; font-size:13px;
+}
+.err{ color:#dc1e32; font-size:13px; padding:24px; text-align:center; }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>インネクサス｜統合KPIダッシュボード</h1>
+  <div class="sub">CS担当者向け 統合ビュー — 上部タブで各ダッシュボードを切り替え</div>
+  <div class="meta" id="meta"></div>
+</header>
+<nav class="tabs" id="tabs" role="tablist"></nav>
+<main class="stage" id="stage">
+  <div class="loading" id="loading">読み込み中…</div>
+</main>
+<script>
+const CFG = /*__CFG__*/;
+
+const tabsEl = document.getElementById('tabs');
+const stageEl = document.getElementById('stage');
+const metaEl = document.getElementById('meta');
+const frames = {}; // id -> iframe (lazy-mounted, kept after first mount)
+let activeId = null;
+
+metaEl.textContent = CFG.updated ? ('最終更新: ' + CFG.updated) : '';
+
+function mount(id){
+  if (frames[id]) return frames[id];
+  const d = CFG.dashboards.find(x => x.id === id);
+  if (!d) return null;
+  const f = document.createElement('iframe');
+  f.title = d.label;
+  f.setAttribute('referrerpolicy','no-referrer');
+  f.srcdoc = d.html;           // DOMプロパティで設定（属性エスケープ不要）
+  f.style.display = 'none';
+  stageEl.appendChild(f);
+  frames[id] = f;
+  return f;
+}
+
+function show(id){
+  const f = mount(id);
+  if (!f) return;
+  Object.keys(frames).forEach(k => { frames[k].style.display = (k === id ? 'block' : 'none'); });
+  Array.from(tabsEl.children).forEach(b => b.classList.toggle('active', b.dataset.id === id));
+  activeId = id;
+}
+
+(function init(){
+  const list = (CFG && Array.isArray(CFG.dashboards)) ? CFG.dashboards : [];
+  if (!list.length){
+    stageEl.innerHTML = '<div class="err">表示できるダッシュボードがありません。</div>';
+    return;
+  }
+  list.forEach(d => {
+    const b = document.createElement('button');
+    b.className = 'tab';
+    b.textContent = d.label;
+    b.dataset.id = d.id;
+    b.setAttribute('role','tab');
+    b.addEventListener('click', () => show(d.id));
+    tabsEl.appendChild(b);
+  });
+  const lo = document.getElementById('loading'); if (lo) lo.remove();
+  show(list[0].id);
+})();
+</script>
+</body>
+</html>

@@ -3,34 +3,41 @@
  * encrypt-wrap.js
  * 内側ダッシュボードHTML（平文）を AES-256-GCM で暗号化し、
  * パスワード入力→復号して表示する自己完結HTMLとして出力する。
+ * パスワードを複数渡すと、同じ内容をそれぞれ別鍵で暗号化して埋め込み、
+ * どのパスワードでも同じページを開けるようにする
+ *（例：社外専用パスワードと、社内共通パスワードの両方で開ける、など）。
  *
  * 復号は閲覧者ブラウザ内（WebCrypto）でのみ行われる。サーバには平文は載らない。
  * WebCrypto互換のため: PBKDF2(SHA-256) でキー導出、暗号文は ciphertext||authTag。
  *
  * 使い方:
- *   node encrypt-wrap.js <inner.html> <out.html> <password> "<title>"
+ *   node encrypt-wrap.js <inner.html> <out.html> <password> "<title>" [password2] [password3...]
  */
 const fs = require('fs');
 const crypto = require('crypto');
 
-const [,, innerPath, outPath, password, pageTitle] = process.argv;
+const [,, innerPath, outPath, password, pageTitle, ...extraPasswords] = process.argv;
 if (!innerPath || !outPath || !password) {
-  console.error('usage: node encrypt-wrap.js <inner.html> <out.html> <password> "<title>"');
+  console.error('usage: node encrypt-wrap.js <inner.html> <out.html> <password> "<title>" [password2...]');
   process.exit(1);
 }
 
 const ITERS = 250000;
 const plaintext = fs.readFileSync(innerPath);
-const salt = crypto.randomBytes(16);
-const iv = crypto.randomBytes(12);
-const key = crypto.pbkdf2Sync(Buffer.from(password, 'utf8'), salt, ITERS, 32, 'sha256');
-
-const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
-const enc = Buffer.concat([cipher.update(plaintext), cipher.final()]);
-const tag = cipher.getAuthTag();
-const payload = Buffer.concat([enc, tag]); // WebCrypto互換: ciphertext + 16byte tag
+const passwords = [password, ...extraPasswords].filter(Boolean);
 
 const b64 = b => b.toString('base64');
+const slots = passwords.map(pw => {
+  const salt = crypto.randomBytes(16);
+  const iv = crypto.randomBytes(12);
+  const key = crypto.pbkdf2Sync(Buffer.from(pw, 'utf8'), salt, ITERS, 32, 'sha256');
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const enc = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  const payload = Buffer.concat([enc, tag]); // WebCrypto互換: ciphertext + 16byte tag
+  return { salt: b64(salt), iv: b64(iv), payload: b64(payload) };
+});
+
 const title = pageTitle || 'ダッシュボード（要パスワード）';
 
 const html = `<!doctype html>
@@ -72,15 +79,21 @@ const html = `<!doctype html>
   </form>
 </div>
 <script>
-const SALT="${b64(salt)}", IV="${b64(iv)}", ITERS=${ITERS};
-const PAYLOAD="${b64(payload)}";
+const ITERS=${ITERS};
+const SLOTS=${JSON.stringify(slots)};
 function b2u(s){ const b=atob(s); const u=new Uint8Array(b.length); for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i); return u; }
-async function unlock(pw){
+async function tryDecrypt(pw, slot){
   const enc=new TextEncoder();
   const km=await crypto.subtle.importKey("raw",enc.encode(pw),"PBKDF2",false,["deriveKey"]);
-  const key=await crypto.subtle.deriveKey({name:"PBKDF2",salt:b2u(SALT),iterations:ITERS,hash:"SHA-256"},km,{name:"AES-GCM",length:256},false,["decrypt"]);
-  const plain=await crypto.subtle.decrypt({name:"AES-GCM",iv:b2u(IV)},key,b2u(PAYLOAD));
+  const key=await crypto.subtle.deriveKey({name:"PBKDF2",salt:b2u(slot.salt),iterations:ITERS,hash:"SHA-256"},km,{name:"AES-GCM",length:256},false,["decrypt"]);
+  const plain=await crypto.subtle.decrypt({name:"AES-GCM",iv:b2u(slot.iv)},key,b2u(slot.payload));
   return new TextDecoder().decode(plain);
+}
+async function unlock(pw){
+  for(const slot of SLOTS){
+    try{ return await tryDecrypt(pw, slot); }catch(_e){ /* このパスワードでは開かない枠。次を試す */ }
+  }
+  throw new Error("no matching slot");
 }
 document.getElementById("f").addEventListener("submit",async e=>{
   e.preventDefault();
@@ -98,4 +111,4 @@ document.getElementById("f").addEventListener("submit",async e=>{
 </html>`;
 
 fs.writeFileSync(outPath, html);
-console.log('wrote', outPath, '(', html.length, 'bytes, payload', payload.length, 'bytes )');
+console.log('wrote', outPath, '(', html.length, 'bytes,', slots.length, 'password slot(s) )');

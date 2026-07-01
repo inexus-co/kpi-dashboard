@@ -37,19 +37,28 @@ const DASHBOARDS = [
   { id: 'social',     file: 'social-analytics.html',      label: 'ソーシャル分析(YouTube)' },
   { id: 'competitor', file: 'competitor-monitoring.html', label: '競合アプリ定点観測' },
   { id: 'freee',      file: 'freee.html',                 label: '経営(freee)' },
+  { id: 'ise',        file: 'ise-chat-usage.html',         label: 'いせちゃん対話ログ' },
 ];
 
-// encrypt-wrap.js が出力する鍵情報の行を抽出
-//   const SALT="..", IV="..", ITERS=NNN;
-//   const PAYLOAD="..";
-function extract(html) {
+// encrypt-wrap.js が出力する鍵情報を抽出する。2形式に対応:
+//   新（2026-07-01〜・複数パスワード対応）: const ITERS=NNN; const SLOTS=[{salt,iv,payload}, ...];
+//   旧（単一パスワード）                 : const SALT="..", IV="..", ITERS=NNN; const PAYLOAD="..";
+// Routineの再生成タイミング次第で新旧どちらの公開HTMLも来うるため両対応する。
+function extractSlots(html) {
+  const mNew = html.match(/const\s+ITERS=(\d+);\s*const\s+SLOTS=(\[.*?\]);/s);
+  if (mNew) {
+    const iters = parseInt(mNew[1], 10);
+    return JSON.parse(mNew[2]).map(s => ({ ...s, iters }));
+  }
   const m1 = html.match(/const\s+SALT="([^"]+)",\s*IV="([^"]+)",\s*ITERS=(\d+);/);
   const m2 = html.match(/const\s+PAYLOAD="([^"]+)";/);
-  if (!m1 || !m2) return null;
-  return { salt: m1[1], iv: m1[2], iters: parseInt(m1[3], 10), payload: m2[1] };
+  if (m1 && m2) {
+    return [{ salt: m1[1], iv: m1[2], iters: parseInt(m1[3], 10), payload: m2[1] }];
+  }
+  return null;
 }
 
-function decrypt({ salt, iv, iters, payload }, pw) {
+function decryptSlot({ salt, iv, iters, payload }, pw) {
   const saltB = Buffer.from(salt, 'base64');
   const ivB   = Buffer.from(iv, 'base64');
   const payB  = Buffer.from(payload, 'base64');
@@ -59,6 +68,14 @@ function decrypt({ salt, iv, iters, payload }, pw) {
   const dec   = crypto.createDecipheriv('aes-256-gcm', key, ivB);
   dec.setAuthTag(tag);
   return Buffer.concat([dec.update(ct), dec.final()]).toString('utf8');
+}
+
+// 渡されたパスワードで、いずれかの枠が復号できればその平文を返す（複数パスワード対応ページ用）。
+function decrypt(slots, pw) {
+  for (const slot of slots) {
+    try { return decryptSlot(slot, pw); } catch (e) { /* このパスワードでは開かない枠。次を試す */ }
+  }
+  throw new Error('no matching password slot');
 }
 
 // JSONをインライン<script>内のJS値リテラルとして安全に埋め込む。
@@ -76,11 +93,11 @@ for (const d of DASHBOARDS) {
   const p = path.join(ROOT, d.file);
   if (!fs.existsSync(p)) { console.warn('[skip] not found:', d.file); continue; }
   const html = fs.readFileSync(p, 'utf8');
-  const meta = extract(html);
-  if (!meta) { console.warn('[skip] no encrypted payload found:', d.file); continue; }
+  const slots = extractSlots(html);
+  if (!slots) { console.warn('[skip] no encrypted payload found:', d.file); continue; }
   let inner;
   try {
-    inner = decrypt(meta, password);
+    inner = decrypt(slots, password);
   } catch (e) {
     console.warn('[skip] decrypt failed (wrong password?):', d.file, '-', e.message);
     continue;

@@ -3,9 +3,9 @@
 # 社外（お茶の水女子大学）向け公開ページ。ISE_EXTERNAL_PASSWORD と DASHBOARD_PASSWORD の
 # どちらでも開けるよう2パスワードで暗号化する（encrypt-wrap.js の複数パスワード対応）。
 #
-# 前提: auto/cache/ise-inner.html に平文の内側HTMLが用意済み。
-#       現時点、内側HTMLの生成（BigQuery取得→描画）は未自動化で手動更新
-#       （他ダッシュボードのような build-ise.js はまだ無い）。
+# 前提: auto/cache/ise-inner.html に平文の内側HTMLが用意済み
+#       （BigQuery取得結果 auto/cache/ise_raw.json から build-ise.js で生成する。
+#        手順の詳細はRoutineプロンプト側が唯一の正）。
 # 必要環境変数: DASHBOARD_PASSWORD（社内共通）, ISE_EXTERNAL_PASSWORD（お茶大専用）
 set -euo pipefail
 : "${DASHBOARD_PASSWORD:?}"

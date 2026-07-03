@@ -231,6 +231,14 @@ tbody tr.own td{background:#f5f8ff;font-weight:600}
 .app-head .nm{font-size:15px;font-weight:700}
 .app-head .rt{font-size:13px;color:var(--muted)}
 .lab{font-size:11px;color:var(--muted);font-weight:600;margin:12px 0 2px}
+.ai-card{border-color:#d7e3fb;background:linear-gradient(180deg,#f6f9ff,#fff)}
+.ai-h{display:flex;align-items:center;gap:9px;margin-bottom:8px;flex-wrap:wrap}
+.ai-badge{font-size:11px;font-weight:700;color:#fff;background:linear-gradient(135deg,#2563eb,#7c3aed);padding:3px 10px;border-radius:999px;letter-spacing:.02em}
+ul.ai-list{margin:0;padding:0;list-style:none}
+ul.ai-list li{display:flex;gap:10px;padding:5.5px 0;font-size:13px;line-height:1.65;align-items:flex-start}
+ul.ai-list li .chip{margin-top:3px;flex:none;min-width:52px;text-align:center}
+ul.ai-list li:not(:last-child){border-bottom:1px dashed var(--line)}
+.chip.gray{background:#eef1f5;color:#475569}
 footer{margin-top:34px;font-size:11.5px;color:var(--muted);border-top:1px solid var(--line);padding-top:14px;line-height:1.7}
 </style>
 </head>
@@ -249,6 +257,12 @@ footer{margin-top:34px;font-size:11.5px;color:var(--muted);border-top:1px solid 
   <div class="coverage" id="coverage"></div>
  </div>
 </header>
+<section class="sec" style="margin-top:12px">
+ <div class="card ai-card">
+  <div class="ai-h"><span class="ai-badge">✦ AI分析コメント</span><span class="tag" id="aiTag"></span></div>
+  <ul class="ai-list" id="aiBody"></ul>
+ </div>
+</section>
 <section class="sec">
  <div class="sec-h"><h2>ハイライト</h2><span class="tag" id="hlTag"></span></div>
  <div class="grid k4" id="kpis"></div>
@@ -302,6 +316,37 @@ function lastPt(a){const s=DATA.series[a];return s[s.length-1];}
 function gain(a,s){const b=baseAt(a,s),l=lastPt(a);return(b&&l)?l.count-b.count:0;}
 function pace(a,s){const b=baseAt(a,s),l=lastPt(a);if(!b||!l)return 0;const d=(new Date(l.date)-new Date(b.date))/864e5;return d>0?Math.round((l.count-b.count)/d*7):0;}
 function cum(a,WIN,s){const b=baseAt(a,s);if(!b)return WIN.map(_=>null);return WIN.map(d=>{const c=ptAt(a,d);return c==null?null:c-b.count;});}
+function paceBetween(a,s,e){const pts=DATA.series[a].filter(p=>p.date>=s&&p.date<=e);if(pts.length<2)return null;const b=pts[0],l=pts[pts.length-1];const d=(new Date(l.date)-new Date(b.date))/864e5;return d>0?(l.count-b.count)/d*7:null;}
+function genAI(days,start,movers){
+ const items=[];const per=days===7?'1週間':days===31?'1ヶ月':'半年';
+ const sk=lastPt('採点くん'),mp=lastPt('まなんでパズル');
+ const skPace=pace('採点くん',start);
+ const m1=movers.find(o=>DATA.meta[o.a].cat==='採点系'&&o.g>0);
+ if(m1){
+  let t=`<b>${m1.a}</b>が期間+${m1.g.toLocaleString()}件（週換算+${m1.w.toLocaleString()}件）で採点系の増加をリード。`;
+  const pv=paceBetween(m1.a,addDays(start,-days),addDays(start,-1));
+  if(pv&&pv>0){const r=m1.w/pv;if(r>=1.3)t+=`直前の${per}と比べ伸びが約${Math.round((r-1)*100)}%加速しています。`;else if(r<=0.7)t+=`直前の${per}と比べペースは鈍化傾向。`;}
+  const cl=lastPt(m1.a),b1=baseAt(m1.a,start),b2=baseAt('採点くん',start);
+  if(cl.count>sk.count){if(b1&&b2){const d=(cl.count-sk.count)-(b1.count-b2.count);if(d>0)t+=`採点くんとの件数差はこの期間で${d.toLocaleString()}件広がり、現在${(cl.count-sk.count).toLocaleString()}件差。`;}}
+  else if(m1.w>skPace){const wk=Math.ceil((sk.count-cl.count)/(m1.w-skPace));if(wk<=12)t+=`このペースが続くと約${wk}週間で採点くんの件数を上回ります。`;}
+  items.push({lbl:'採点系',cls:'score',t});
+ }else items.push({lbl:'採点系',cls:'score',t:'この期間、採点系競合のレビュー件数増は観測されていません。'});
+ const e1=movers.find(o=>DATA.meta[o.a].cat==='知育系'&&o.g>0);
+ const eduStars=EDUP.map(a=>lastPt(a).star);const mpRank=eduStars.filter(s=>s>mp.star).length+1;
+ items.push({lbl:'知育系',cls:'edu',t:(e1?`<b>${e1.a}</b>が期間+${e1.g.toLocaleString()}件で最も活発。`:'競合に目立った動きはなく静観が続く。')+`<b>まなんでパズル</b>（★${mp.star}）は知育系${eduStars.length}アプリ中の★${mpRank}位${mpRank===1?'で首位を維持':''}。`});
+ const gs=gain('採点くん',start),gm=gain('まなんでパズル',start);
+ const skN=DATA.reviews['採点くん'].new[0],mpN=DATA.reviews['まなんでパズル'].new[0];
+ let to=`採点くんは期間+${gs}件（★${sk.star}/${sk.count}件）、まなんでパズルは+${gm}件（★${mp.star}/${mp.count}件）。`;
+ if(skN)to+=`採点くんに新規★${skN.star}レビューあり。`;
+ if(mpN)to+=`まなんでパズルに新規★${mpN.star}レビューあり。`;
+ if(!gs&&!gm&&(m1||e1))to+=`競合が件数を伸ばす中、自社2アプリは横ばい。レビュー獲得導線の検討余地があります。`;
+ items.push({lbl:'自社',cls:'ownb',t:to});
+ const sig=[];
+ Object.keys(DATA.series).forEach(a=>{if(!present(a))return;const b=baseAt(a,start),l=lastPt(a);if(b&&l&&Math.abs(l.star-b.star)>=0.1)sig.push(`<b>${a}</b>の★が${b.star}→${l.star}に${l.star>b.star?'上昇':'低下'}`);});
+ Object.keys(DATA.series).forEach(a=>{if(DATA.meta[a].own||!present(a))return;const vs=[...new Set(DATA.series[a].filter(p=>p.date>=start&&p.ver).map(p=>p.ver))];if(vs.length>1)sig.push(`<b>${a}</b>が期間中に${vs[vs.length-1]}をリリース`);});
+ if(sig.length)items.push({lbl:'シグナル',cls:'gray',t:sig.join('。')+'。'});
+ return items;
+}
 let charts={};
 function mkLine(id,apps,WIN,s){if(charts[id])charts[id].destroy();
  const ds=apps.map(a=>({label:a+(DATA.meta[a].own?" ★自社":""),data:cum(a,WIN,s),borderColor:COLORS[a],backgroundColor:COLORS[a],borderWidth:DATA.meta[a].own?3.5:2,tension:.3,pointRadius:DATA.meta[a].own?3:2,pointHoverRadius:5,borderDash:DATA.meta[a].own?[]:(DASHED.has(a)?[5,4]:[]),spanGaps:true}));
@@ -317,6 +362,8 @@ function render(days){
  document.getElementById('coverage').innerHTML=`観測開始 <b>${OBS_START}</b> ・ この期間のデータ点 <b>${WIN.length}日分</b>（毎日蓄積）`;
  mkLine('scoreChart',SCOREP,WIN,start);mkLine('eduChart',EDUP,WIN,start);
  const movers=Object.keys(DATA.series).filter(a=>!DATA.meta[a].own&&present(a)).map(a=>({a,g:gain(a,start),w:pace(a,start)})).sort((x,y)=>y.w-x.w);
+ document.getElementById('aiTag').textContent=periodLbl+'のデータに基づく自動生成コメント';
+ document.getElementById('aiBody').innerHTML=genAI(days,start,movers).map(i=>`<li><span class="chip ${i.cls}">${i.lbl}</span><div>${i.t}</div></li>`).join('');
  function kCard(o){return `<div class="card kpi ${o.own?'own':''}"><div class="lbl"><span class="dot" style="background:${o.color}"></span>${o.lbl}</div><div class="big">${o.big}<span class="u">${o.u||''}</span></div><div class="meta">${o.meta}</div></div>`;}
  let c='';
  if(movers[0])c+=kCard({color:COLORS[movers[0].a],lbl:movers[0].a,big:'+'+movers[0].g,u:'件 / 期間',meta:`週換算 <span class="up">+${movers[0].w}件/週</span> ・ 採点系で最速`});

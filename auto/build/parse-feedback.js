@@ -30,8 +30,9 @@ function parseRecords(text){
   }
   return recs;
 }
-function daysAgoStr(n){ const d=new Date(); d.setDate(d.getDate()-n);
-  const p=x=>String(x).padStart(2,"0"); return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate()); }
+// レコードのタイムスタンプがJSTのため、基準日もJSTで計算する（コンテナのTZに依存しない）
+function daysAgoStr(n){ const d=new Date(Date.now()+9*3600*1000); d.setUTCDate(d.getUTCDate()-n);
+  const p=x=>String(x).padStart(2,"0"); return d.getUTCFullYear()+"-"+p(d.getUTCMonth()+1)+"-"+p(d.getUTCDate()); }
 function countBy(recs,keyFn){ const map={};
   recs.forEach(r=>{ const k=keyFn(r)||"不明"; map[k]=map[k]||{pos:0,neg:0,other:0,total:0}; map[k][r.rating]++; map[k].total++; }); return map; }
 
@@ -60,7 +61,7 @@ fs.writeFileSync(recPath, JSON.stringify(records));
 fs.writeFileSync(statsPath, JSON.stringify(stats));
 
 const mk=s=>({total:s.総数,pos:s.いいね,neg:s.よくない,satisfaction:s.満足率パーセント});
-const notify={ date: records.length?records[0].dateStr:null, latest: records.length?records[0].dateStr:null,
+const notify={ date: daysAgoStr(0), latest: records.length?records[0].dateStr:null,
   d7:mk(stats["直近7日"]), d30:mk(stats["直近30日"]) };
 // 最新日付は records 内の最大
 if(records.length){ notify.latest=records.reduce((a,r)=>r.dateStr>a?r.dateStr:a, records[0].dateStr); }

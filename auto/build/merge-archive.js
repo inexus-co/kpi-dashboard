@@ -37,7 +37,12 @@ function blocks(text){
   const head=blocksHead(text), tail=blocksTail(text);
   return head.length>=tail.length?head:tail;
 }
-const hash=s=>crypto.createHash('sha1').update(s.trim()).digest('hex').slice(0,12);
+// ハッシュ前の正規化: conciseレスポンス先頭の "Channel: ..." ヘッダー行は
+// その日の最新メッセージのブロックにのみ付着し、翌日の再取得(オーバーラップ)では
+// 同じメッセージがヘッダー無しで返るため、素のハッシュでは重複排除に失敗する。
+// 送信者表示名（"ﾕｰｻﾞｰﾌｨｰﾄﾞﾊﾞｯｸ: " 等）も表記揺れの影響を受けるため除外する。
+const normalize=s=>s.trim().replace(/^Channel:[^\n]*\n+/,'').replace(/^[^\n]*?: /,'');
+const hash=s=>crypto.createHash('sha1').update(normalize(s)).digest('hex').slice(0,12);
 const key=b=>b.stamp+'|'+hash(b.block);
 
 const archText=fs.existsSync(archPath)?fs.readFileSync(archPath,'utf8'):'';

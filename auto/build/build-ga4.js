@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /*
  * build-ga4.js  —  compute 専任（build-social.js と同じ「集計→JSON出力」方式）
- * GA4(Web分析: kids.inexus-co.com) の日次スナップショット履歴を更新し、
+ * GA4(まなんでパズル Webアクセス分析: kids.inexus-co.com) の日次スナップショット履歴を更新し、
  * ダッシュボード描画用データ(D)と Slack通知用データを出力する。
  * HTMLは作らない（描画は render-ga4.js、暗号化は encrypt-wrap.js）。
  *
@@ -154,7 +154,7 @@ function main() {
 
   const fd = (v) => (v == null ? "—" : (v >= 0 ? "+" + v.toLocaleString("ja-JP") : v.toLocaleString("ja-JP")));
   console.log(`[OK] data=${OUT_DATA} notify=${OUT_NOTIFY} ｜ 履歴 ${history.length}日分`);
-  console.log(`SUMMARY: Web分析(GA4) ｜ 最終データ日 ${data.last_date} ｜ DAU ${k.dau.toLocaleString("ja-JP")}（7日 ${fd(k.dau_7d)}）｜ WAU ${k.wau.toLocaleString("ja-JP")} ｜ MAU ${k.mau.toLocaleString("ja-JP")} ｜ 粘着度 ${k.stickiness}% ｜ 主要流入 ${topCh ? topCh.channel : "—"} ｜ 主要イベント ${topEv ? topEv.name : "—"}`);
+  console.log(`SUMMARY: まなんでパズル Webアクセス分析 ｜ 最終データ日 ${data.last_date} ｜ DAU ${k.dau.toLocaleString("ja-JP")}（7日 ${fd(k.dau_7d)}）｜ WAU ${k.wau.toLocaleString("ja-JP")} ｜ MAU ${k.mau.toLocaleString("ja-JP")} ｜ 粘着度 ${k.stickiness}% ｜ 主要流入 ${topCh ? topCh.channel : "—"} ｜ 主要イベント ${topEv ? topEv.name : "—"}`);
 }
 
 main();

@@ -35,7 +35,7 @@ const TEMPLATE = String.raw`<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Web分析（GA4）ダッシュボード</title>
+<title>まなんでパズル Webアクセス分析ダッシュボード</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js"></script>
 <style>
   :root { color-scheme: light; }
@@ -94,7 +94,7 @@ const TEMPLATE = String.raw`<!DOCTYPE html>
 <body>
 <div class="wrap">
   <header>
-    <h1>Web分析（GA4）ダッシュボード</h1>
+    <h1>まなんでパズル Webアクセス分析ダッシュボード</h1>
     <div class="sub">GA4 <code>kids.inexus-co.com</code>（まなんでパズル Web版・property 289134520）の集計値を直接取得（毎日自動更新）</div>
     <div class="asof" id="asof"></div>
     <div class="notice" id="notice" style="display:none"></div>

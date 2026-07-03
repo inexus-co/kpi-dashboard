@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Web分析(GA4): データ準備フェーズ（履歴開封→GA4 fetch→冪等マージ→集計）。pushはしない。
+# まなんでパズル Webアクセス分析(GA4): データ準備フェーズ（履歴開封→GA4 fetch→冪等マージ→集計）。pushはしない。
 # この後 routine が AI寸評を作文し、ga4-publish.sh で描画・push する（social と同じ二相）。
 # 必要環境変数: CACHE_KEY ＋ GA4認証（GA4_SA_KEY_B64 または GOOGLE_APPLICATION_CREDENTIALS）
 #   ※ GA4_PROPERTY_ID は ga4-fetch.js の既定 289134520。変える場合のみ指定。

@@ -3,6 +3,7 @@
 # 前提: auto/cache/ に current_fetch.json と ai.json が生成済み、cache-freee.enc 復号済み
 # 必要環境変数: DASHBOARD_PASSWORD, CACHE_KEY
 set -euo pipefail
+. "$(dirname "$0")/env-recover.sh"
 : "${DASHBOARD_PASSWORD:?}"; : "${CACHE_KEY:?}"
 ROOT="$(git rev-parse --show-toplevel)"; cd "$ROOT"
 B=auto/build; C=auto/cache

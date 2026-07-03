@@ -32,24 +32,28 @@ cleanup_old_branches(){
   return 0
 }
 
+# origin（Claude Codeのgitプロキシ）経由のpushはコミットが署名されGitHubでVerified表示になる。
+# originを優先し、push許可が無い環境でのみ GITHUB_PAT 直pushにフォールバックする。
+CANDIDATES=(origin)
+if [ -n "${GITHUB_PAT:-}" ]; then
+  CANDIDATES+=("https://x-access-token:${GITHUB_PAT}@github.com/inexus-co/kpi-dashboard.git")
+fi
 for i in 1 2 3 4 5; do
-  if [ -n "${GITHUB_PAT:-}" ]; then
-    REMOTE="https://x-access-token:${GITHUB_PAT}@github.com/inexus-co/kpi-dashboard.git"
-  else
-    REMOTE="origin"
-  fi
-  git pull --rebase "$REMOTE" main 2>&1 | mask | tail -1
-  if git push "$REMOTE" HEAD:main 2>&1 | mask | tail -2; then
-    # 作業ブランチを同期（stop hookが未pushコミットと誤検知しないように）
-    if [ -n "$CURRENT_BRANCH" ] && [ "$CURRENT_BRANCH" != "main" ]; then
-      git push "$REMOTE" HEAD:"$CURRENT_BRANCH" 2>&1 | mask | tail -1 || true
-      # PAT付きURLへのpushでは origin/* のremote-tracking refが更新されないため、
-      # 明示的にfetchして揃える（stop hookが古いrefと比較して誤検知するのを防ぐ）
-      git fetch "$REMOTE" "+refs/heads/$CURRENT_BRANCH:refs/remotes/origin/$CURRENT_BRANCH" 2>&1 | mask | tail -1 || true
+  for REMOTE in "${CANDIDATES[@]}"; do
+    git pull --rebase "$REMOTE" main 2>&1 | mask | tail -1 || continue
+    if git push "$REMOTE" HEAD:main 2>&1 | mask | tail -2; then
+      # 作業ブランチを同期（stop hookが未pushコミットと誤検知しないように。
+      # プロキシ署名でリモート側SHAが変わり得るためforce）
+      if [ -n "$CURRENT_BRANCH" ] && [ "$CURRENT_BRANCH" != "main" ]; then
+        git push -f "$REMOTE" HEAD:"$CURRENT_BRANCH" 2>&1 | mask | tail -1 || true
+        # PAT付きURLへのpushでは origin/* のremote-tracking refが更新されないため、
+        # 明示的にfetchして揃える（stop hookが古いrefと比較して誤検知するのを防ぐ）
+        git fetch "$REMOTE" "+refs/heads/$CURRENT_BRANCH:refs/remotes/origin/$CURRENT_BRANCH" 2>&1 | mask | tail -1 || true
+      fi
+      cleanup_old_branches "$REMOTE"
+      git log --oneline -1; echo DONE; exit 0
     fi
-    cleanup_old_branches "$REMOTE"
-    git log --oneline -1; echo DONE; exit 0
-  fi
+  done
   echo "push retry $i"; sleep $((RANDOM % 10 + 5))
 done
 echo "push failed after retries" >&2

@@ -4,6 +4,7 @@
 # AI寸評 social_ai.json は任意（無ければ render-social.js が数値由来の自動ハイライトでフォールバック）。
 # 必要環境変数: DASHBOARD_PASSWORD（閲覧PW）, CACHE_KEY（キャッシュ暗号鍵）
 set -euo pipefail
+. "$(dirname "$0")/env-recover.sh"
 : "${DASHBOARD_PASSWORD:?}"; : "${CACHE_KEY:?}"
 ROOT="$(git rev-parse --show-toplevel)"; cd "$ROOT"
 B=auto/build; C=auto/cache

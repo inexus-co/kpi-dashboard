@@ -3,6 +3,7 @@
 # 既存の parse 系（差分取得→集計JSON出力）に相当。この後 routine が AI寸評を作文し、social-publish.sh で描画・push する。
 # 必要環境変数: CACHE_KEY, YOUTUBE_API_KEY, YOUTUBE_CHANNEL_ID
 set -euo pipefail
+. "$(dirname "$0")/env-recover.sh"
 : "${CACHE_KEY:?}"; : "${YOUTUBE_API_KEY:?}"; : "${YOUTUBE_CHANNEL_ID:?}"
 ROOT="$(git rev-parse --show-toplevel)"; cd "$ROOT"
 B=auto/build; C=auto/cache

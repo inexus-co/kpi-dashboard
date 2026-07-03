@@ -4,6 +4,7 @@
 # 必要環境変数: CACHE_KEY ＋ GA4認証（GA4_SA_KEY_B64 または GOOGLE_APPLICATION_CREDENTIALS）
 #   ※ GA4_PROPERTY_ID は ga4-fetch.js の既定 289134520。変える場合のみ指定。
 set -euo pipefail
+. "$(dirname "$0")/env-recover.sh"
 # 0) 必須環境変数のプリフライト（publishで使うDASHBOARD_PASSWORDも先に検査して早期失敗させる）
 bash "$(dirname "$0")/env-preflight.sh" CACHE_KEY DASHBOARD_PASSWORD
 if [ -z "${GA4_SA_KEY_B64:-}" ] && [ -z "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]; then

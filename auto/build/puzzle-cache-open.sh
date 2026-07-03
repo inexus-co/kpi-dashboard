@@ -2,6 +2,7 @@
 # キャッシュ復号: auto/cache-puzzle.enc -> auto/cache/slack_archive/
 # 必要環境変数: CACHE_KEY
 set -euo pipefail
+. "$(dirname "$0")/env-recover.sh"
 bash "$(dirname "$0")/env-preflight.sh" CACHE_KEY
 ROOT="$(git rev-parse --show-toplevel)"; cd "$ROOT"
 mkdir -p auto/cache

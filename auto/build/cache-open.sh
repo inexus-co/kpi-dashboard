@@ -2,6 +2,7 @@
 # 使い方: bash auto/build/cache-open.sh <encファイル名 例: cache-saiten.enc>
 # 必要環境変数: CACHE_KEY
 set -euo pipefail
+. "$(dirname "$0")/env-recover.sh"
 bash "$(dirname "$0")/env-preflight.sh" CACHE_KEY
 ENC="${1:?usage: cache-open.sh <enc-file>}"
 ROOT="$(git rev-parse --show-toplevel)"; cd "$ROOT"

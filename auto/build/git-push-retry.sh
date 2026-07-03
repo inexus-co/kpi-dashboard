@@ -43,6 +43,9 @@ for i in 1 2 3 4 5; do
     # 作業ブランチを同期（stop hookが未pushコミットと誤検知しないように）
     if [ -n "$CURRENT_BRANCH" ] && [ "$CURRENT_BRANCH" != "main" ]; then
       git push "$REMOTE" HEAD:"$CURRENT_BRANCH" 2>&1 | mask | tail -1 || true
+      # PAT付きURLへのpushでは origin/* のremote-tracking refが更新されないため、
+      # 明示的にfetchして揃える（stop hookが古いrefと比較して誤検知するのを防ぐ）
+      git fetch "$REMOTE" "+refs/heads/$CURRENT_BRANCH:refs/remotes/origin/$CURRENT_BRANCH" 2>&1 | mask | tail -1 || true
     fi
     cleanup_old_branches "$REMOTE"
     git log --oneline -1; echo DONE; exit 0

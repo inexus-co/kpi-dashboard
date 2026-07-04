@@ -105,6 +105,7 @@ const longest = conversations.reduce((a, b) => (b.turns.length > (a ? a.turns.le
 const MATERIAL_RE = /https:\/\/ise-rika\.cf\.ocha\.ac\.jp\/(\d+)/g;
 // 同じ行に説明文があればそれをそのまま使う（1行完結の箇条書き向け）。
 // URLだけの行（説明が上の行に分かれている箇条書き）のときだけ、空行に当たるまで遡って連結する。
+// 連結は全角空白で行う（1行目が「N. 教材名」形式のため、ラベル抽出側で名称だけを切り出せる）。
 function materialContext(lines, lineIdx, url) {
   const sameLine = lines[lineIdx].replace(url, "").trim();
   if (sameLine.length > 3) return sameLine;
@@ -114,14 +115,19 @@ function materialContext(lines, lineIdx, url) {
     if (!t) break;
     parts.unshift(t);
   }
-  return parts.join(" ");
+  return parts.join("　");
 }
+// 学年表記は「小6向け」「小6・中3向け」「中2・小3・小6」「小3〜小6・中1」のような連なりで現れる
+const GRADE_RUN_RE = /(小\d|中\d)(\s*[・、〜~･]\s*(小\d|中\d))*(\s*向け)?/;
 function materialLabelAndGrade(context, id) {
-  const gradeMatch = context.match(/(小\d|中\d)\s*向け/);
-  let label = gradeMatch ? context.slice(0, gradeMatch.index) : context;
-  label = label.replace(/^[\s\d.．、・\-]+/, "").split("／")[0].trim();
-  if (!label) label = context.replace(/^[\s\d.．、・\-]+/, "").trim();
-  return { label: label ? label.slice(0, 40) : `教材 #${id}`, grade: gradeMatch ? gradeMatch[0].replace(/\s+/g, "") : "" };
+  const c = context.replace(/^[\s\d.．、・\-]+/, "").trim();
+  const gm = c.match(GRADE_RUN_RE);
+  let label = gm ? c.slice(0, gm.index) : c;
+  label = label.split("　")[0].split("／")[0].replace(/[（(]\s*$/, "").trim();
+  if (!label) label = c.split("　")[0].split("／")[0].trim();
+  // 「いただいたURLはこちらですね：」のような会話文の断片は教材名として扱わない
+  if (/[。：:、]$/.test(label)) label = "";
+  return { label: label ? label.slice(0, 40) : `教材 #${id}`, grade: gm ? gm[0].replace(/\s+/g, "") : "" };
 }
 const materials = new Map(); // id -> {id, url, label, grade, count}
 for (const t of rows) {
@@ -191,6 +197,28 @@ const areaPath = points.length
 const peak = rows.length ? rows.reduce((a, b) => (b.answerLen > a.answerLen ? b : a)) : null;
 const peakPoint = peak ? { x: xOf(peak), y: yOf(peak.answerLen) } : null;
 const convStarts = conversations.slice(1).map((c) => ({ x: xOf(c.turns[0]), label: c.firstQuestion.slice(0, 10) }));
+// 会話開始ラベルは近接すると重なって読めないため間引く（点線は全会話分描く）
+const LABEL_MIN_GAP = 64;
+const convStartLabels = [];
+{
+  let prevX = -Infinity;
+  for (const c of convStarts) {
+    const lx = Math.min(c.x + 3, plotRight - 96);
+    if (lx - prevX >= LABEL_MIN_GAP) { convStartLabels.push({ x: lx, label: c.label }); prevX = lx; }
+  }
+}
+// 日付目盛り（JST 0時の位置）。密集時は間引く
+const dayTicks = [];
+if (rows.length) {
+  const lastDayStart = Date.parse(rows[rows.length - 1].jst.slice(0, 10) + "T00:00:00Z");
+  let prevX = -Infinity;
+  for (let ms = Date.parse(rows[0].jst.slice(0, 10) + "T00:00:00Z") + 86400000; ms <= lastDayStart; ms += 86400000) {
+    const x = plotLeft + ((ms - tMin) / tSpan) * (plotRight - plotLeft);
+    if (x < plotLeft + 28 || x > plotRight - 20 || x - prevX < 56) continue;
+    dayTicks.push({ x, label: new Date(ms).toISOString().slice(5, 10) });
+    prevX = x;
+  }
+}
 const gridMidLabel = Math.round((lenMax / 2) / 50) * 50;
 
 // ---------- HTMLエスケープ ----------
@@ -204,11 +232,15 @@ const CLASS_COLOR = { learn: "var(--copper)", chat: "var(--coral)", find: "var(-
 
 const updated = updatedArg || new Date().toISOString();
 const dataRangeLabel = rows.length ? `${rows[0].jst.slice(0, 16).replace("T", " ")} → ${rows[rows.length - 1].jst.slice(0, 16).replace("T", " ")}` : "データなし";
-const daySpan = allDays.length;
+// 「運用開始N日目」は暦日で数える（利用が無い日があっても日数が進むように）
+const daySpan = allDays.length
+  ? Math.round((Date.parse(allDays[allDays.length - 1].day) - Date.parse(allDays[0].day)) / 86400000) + 1
+  : 0;
 
 const CONV_DISPLAY_LIMIT = 50;
 const MATERIAL_DISPLAY_LIMIT = 24;
-const convsToShow = conversations.slice(-CONV_DISPLAY_LIMIT).reverse();
+// 表示は「最終やりとり」の新しい順（日をまたいで再開された会話が古い側に埋もれないように）
+const convsToShow = conversations.slice().sort((a, b) => b.endTs - a.endTs).slice(0, CONV_DISPLAY_LIMIT);
 const convOmitted = conversations.length - convsToShow.length;
 const materialsToShow = materialList.slice(0, MATERIAL_DISPLAY_LIMIT);
 const materialsOmitted = materialList.length - materialsToShow.length;
@@ -282,8 +314,14 @@ function renderChart() {
   const boundaries = convStarts
     .map((c) => `<line x1="${c.x.toFixed(1)}" y1="${plotTop + 4}" x2="${c.x.toFixed(1)}" y2="${plotBottom}"/>`)
     .join("");
-  const boundaryLabels = convStarts
-    .map((c) => `<text class="glab" x="${Math.min(c.x + 3, plotRight - 60).toFixed(1)}" y="${plotTop + 14}">${esc(c.label)}</text>`)
+  const boundaryLabels = convStartLabels
+    .map((c) => `<text class="glab" x="${c.x.toFixed(1)}" y="${plotTop + 14}">${esc(c.label)}</text>`)
+    .join("");
+  const dayTickMarks = dayTicks
+    .map((d) => `<line x1="${d.x.toFixed(1)}" y1="${plotBottom}" x2="${d.x.toFixed(1)}" y2="${plotBottom + 4}"/>`)
+    .join("");
+  const dayTickLabels = dayTicks
+    .map((d) => `<text class="axis" text-anchor="middle" x="${d.x.toFixed(1)}" y="${plotBottom + 12}">${d.label}</text>`)
     .join("");
   const peakLabel = peak
     ? `<circle class="peakdot" cx="${peakPoint.x.toFixed(1)}" cy="${peakPoint.y.toFixed(1)}" r="4.5" fill="#B4652E"/>
@@ -295,6 +333,8 @@ function renderChart() {
           <text class="axis" x="${plotLeft}" y="${plotTop - 4}">字数</text>
           <text class="axis" x="${plotLeft}" y="${((plotTop + plotBottom) / 2 + 3).toFixed(1)}">${gridMidLabel}</text>
           <text class="axis" x="${plotLeft}" y="${plotBottom + 12}">0</text>
+          <g stroke="#CBD7E0" stroke-width="1">${dayTickMarks}</g>
+          ${dayTickLabels}
           <g stroke="#728398" stroke-width="1" stroke-dasharray="3 4" opacity=".45">${boundaries}</g>
           ${boundaryLabels}
           <path class="depthfill" fill="rgba(29,98,179,.14)" d="${areaPath}"/>
@@ -308,7 +348,11 @@ function renderThreads() {
   if (!convsToShow.length) return `<p class="insight">会話がまだありません。</p>`;
   const threads = convsToShow
     .map((c) => {
-      const when = c.turns.length > 1 ? `${c.startTs.toISOString().slice(5, 10).replace("-", "-")} ${c.turns[0].jst.slice(11, 16)} → ${c.turns[c.turns.length - 1].jst.slice(11, 16)}` : `${c.turns[0].jst.slice(0, 10)} ${c.turns[0].jst.slice(11, 16)}`;
+      const first = c.turns[0], last = c.turns[c.turns.length - 1];
+      // 日をまたいで再開された会話は終了側にも日付を付ける（「11:36 → 09:26」の時間逆行見えを防ぐ）
+      const when = c.turns.length > 1
+        ? `${first.jst.slice(5, 10)} ${first.jst.slice(11, 16)} → ${last.jst.slice(0, 10) === first.jst.slice(0, 10) ? "" : last.jst.slice(5, 10) + " "}${last.jst.slice(11, 16)}`
+        : `${first.jst.slice(0, 10)} ${first.jst.slice(11, 16)}`;
       const cls = (ai.classifications && ai.classifications[c.rootId]) || null;
       const chip = cls ? `<span class="chip ${cls === "learn" ? "learn" : cls === "find" ? "find" : "chat"}">${CLASS_LABEL[cls].split("（")[0]}</span>` : "";
       const turnsHtml = c.turns
@@ -704,4 +748,4 @@ const html = `<!doctype html>
 </html>`;
 
 fs.writeFileSync(OUT, html);
-console.log("wrote", OUT, `(${html.length} bytes, ${totalConvs} conversations, ${totalTurns} turns)`);
+console.log("wrote", OUT, `(${Buffer.byteLength(html)} bytes, ${totalConvs} conversations, ${totalTurns} turns)`);

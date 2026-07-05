@@ -1,4 +1,5 @@
 {
+  "language": "japanese",
   "permissions": {
     "allow": [
       "mcp__Google-Cloud-BigQuery__execute_sql_readonly",

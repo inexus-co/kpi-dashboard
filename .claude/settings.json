@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__Google-Cloud-BigQuery__execute_sql_readonly",
+      "Bash(mkdir -p auto/cache)",
+      "Bash(node auto/build/*)",
+      "Bash(bash auto/build/*)",
+      "Bash(cp /root/.claude/projects/*)",
+      "Bash(python3 *)",
+      "Bash(ls *)",
+      "Bash(wc *)",
+      "Bash(cat auto/cache/*)",
+      "Bash(jq *)",
+      "Bash(date *)",
+      "Bash(TZ=Asia/Tokyo date *)",
+      "Bash(git status*)",
+      "Bash(git log *)",
+      "Bash(git diff *)",
+      "Bash(git show *)",
+      "Bash(git branch *)",
+      "Bash(git fetch *)"
+    ]
+  }
+}

@@ -58,7 +58,6 @@ const rows = loadRows(RAW)
     jst: r.jst,
     question: r.question || "",
     answer: r.answer || "",
-    answerLen: (r.answer || "").length,
     error: r.error === true || r.error === "true",
     rid: r.rid || null,
     prevRid: r.prevRid || null,
@@ -178,48 +177,36 @@ for (const t of rows) {
 const allDays = [...dayMap.entries()].map(([day, d]) => ({ day, turns: d.turns, convs: d.convs.size }));
 const recentDays = allDays.slice(-7);
 
-// ---------- SVGチャート座標計算（応答文字数の時系列） ----------
-const CHART_W = 720, CHART_H = 210, PAD_L = 8, PAD_R = 8, PAD_TOP = 16, PAD_BOTTOM = 34;
+// ---------- SVGチャート座標計算（日別の利用量・棒グラフ） ----------
+// 利用者はそれぞれ別（同一人物の再訪はログ上識別できない）ため、全ターンを1本の線で
+// つなぐ時系列ではなく「1日にどれだけ使われたか」を会話数・ターン数の日別棒グラフで示す。
+const chartDays = [];
+if (allDays.length) {
+  const byDay = new Map(allDays.map((d) => [d.day, d]));
+  const firstMs = Date.parse(allDays[0].day + "T00:00:00Z");
+  const lastMs = Date.parse(allDays[allDays.length - 1].day + "T00:00:00Z");
+  for (let ms = firstMs; ms <= lastMs; ms += 86400000) {
+    const day = new Date(ms).toISOString().slice(0, 10);
+    const d = byDay.get(day);
+    chartDays.push({ day, turns: d ? d.turns : 0, convs: d ? d.convs : 0 });
+  }
+}
+const CHART_H = 210, PAD_L = 30, PAD_R = 8, PAD_TOP = 18, PAD_BOTTOM = 26;
+const SLOT_MIN = 26; // 1日あたりの最小幅。日数が増えたら横スクロールで伸ばす
+const CHART_W = Math.max(720, PAD_L + PAD_R + chartDays.length * SLOT_MIN);
 const plotTop = PAD_TOP, plotBottom = CHART_H - PAD_BOTTOM, plotLeft = PAD_L, plotRight = CHART_W - PAD_R;
-const tMin = rows.length ? rows[0].ts.getTime() : 0;
-const tMax = rows.length ? rows[rows.length - 1].ts.getTime() : 1;
-const tSpan = Math.max(tMax - tMin, 1);
-const lenMax = rows.length ? Math.max(...rows.map((t) => t.answerLen)) : 1;
-function xOf(t) { return plotLeft + ((t.ts.getTime() - tMin) / tSpan) * (plotRight - plotLeft); }
-function yOf(len) { return plotBottom - (len / lenMax) * (plotBottom - plotTop); }
-const points = rows.map((t) => ({ x: xOf(t), y: yOf(t.answerLen), t }));
-const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
-const areaPath = points.length
-  ? `M${points[0].x.toFixed(1)},${plotBottom} ` +
-    points.map((p) => `L${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ") +
-    ` L${points[points.length - 1].x.toFixed(1)},${plotBottom} Z`
-  : "";
-const peak = rows.length ? rows.reduce((a, b) => (b.answerLen > a.answerLen ? b : a)) : null;
-const peakPoint = peak ? { x: xOf(peak), y: yOf(peak.answerLen) } : null;
-const convStarts = conversations.slice(1).map((c) => ({ x: xOf(c.turns[0]), label: c.firstQuestion.slice(0, 10) }));
-// 会話開始ラベルは近接すると重なって読めないため間引く（点線は全会話分描く）
-const LABEL_MIN_GAP = 64;
-const convStartLabels = [];
-{
-  let prevX = -Infinity;
-  for (const c of convStarts) {
-    const lx = Math.min(c.x + 3, plotRight - 96);
-    if (lx - prevX >= LABEL_MIN_GAP) { convStartLabels.push({ x: lx, label: c.label }); prevX = lx; }
-  }
+const slotW = chartDays.length ? (plotRight - plotLeft) / chartDays.length : 0;
+const barW = Math.min(16, Math.max(4, Math.floor(slotW * 0.3)));
+const yMaxRaw = chartDays.reduce((m, d) => Math.max(m, d.turns), 0);
+const yMax = Math.max(5, Math.ceil(yMaxRaw / 5) * 5);
+function yOfCount(n) { return plotBottom - (n / yMax) * (plotBottom - plotTop); }
+// 棒はデータ端（上端）のみ角丸、下端はベースラインに接地
+function barPath(x, y, w, bottom) {
+  const r = Math.min(2, w / 2);
+  if (bottom - y < r) return `M${x.toFixed(1)},${bottom} h${w} v${(y - bottom).toFixed(1)} h${-w} Z`;
+  return `M${x.toFixed(1)},${bottom} V${(y + r).toFixed(1)} a${r},${r} 0 0 1 ${r},${-r} h${w - 2 * r} a${r},${r} 0 0 1 ${r},${r} V${bottom} Z`;
 }
-// 日付目盛り（JST 0時の位置）。密集時は間引く
-const dayTicks = [];
-if (rows.length) {
-  const lastDayStart = Date.parse(rows[rows.length - 1].jst.slice(0, 10) + "T00:00:00Z");
-  let prevX = -Infinity;
-  for (let ms = Date.parse(rows[0].jst.slice(0, 10) + "T00:00:00Z") + 86400000; ms <= lastDayStart; ms += 86400000) {
-    const x = plotLeft + ((ms - tMin) / tSpan) * (plotRight - plotLeft);
-    if (x < plotLeft + 28 || x > plotRight - 20 || x - prevX < 56) continue;
-    dayTicks.push({ x, label: new Date(ms).toISOString().slice(5, 10) });
-    prevX = x;
-  }
-}
-const gridMidLabel = Math.round((lenMax / 2) / 50) * 50;
+const peakDay = chartDays.reduce((a, b) => (b.turns > (a ? a.turns : 0) ? b : a), null);
 
 // ---------- HTMLエスケープ ----------
 function esc(s) {
@@ -309,37 +296,31 @@ function renderTimePanel() {
 }
 
 function renderChart() {
-  if (!rows.length) return `<p class="insight">データがまだありません。</p>`;
-  const gridLines = `<line x1="${plotLeft}" y1="${plotTop}" x2="${plotRight}" y2="${plotTop}"/><line x1="${plotLeft}" y1="${((plotTop + plotBottom) / 2).toFixed(1)}" x2="${plotRight}" y2="${((plotTop + plotBottom) / 2).toFixed(1)}"/><line x1="${plotLeft}" y1="${plotBottom}" x2="${plotRight}" y2="${plotBottom}"/>`;
-  const boundaries = convStarts
-    .map((c) => `<line x1="${c.x.toFixed(1)}" y1="${plotTop + 4}" x2="${c.x.toFixed(1)}" y2="${plotBottom}"/>`)
-    .join("");
-  const boundaryLabels = convStartLabels
-    .map((c) => `<text class="glab" x="${c.x.toFixed(1)}" y="${plotTop + 14}">${esc(c.label)}</text>`)
-    .join("");
-  const dayTickMarks = dayTicks
-    .map((d) => `<line x1="${d.x.toFixed(1)}" y1="${plotBottom}" x2="${d.x.toFixed(1)}" y2="${plotBottom + 4}"/>`)
-    .join("");
-  const dayTickLabels = dayTicks
-    .map((d) => `<text class="axis" text-anchor="middle" x="${d.x.toFixed(1)}" y="${plotBottom + 12}">${d.label}</text>`)
-    .join("");
-  const peakLabel = peak
-    ? `<circle class="peakdot" cx="${peakPoint.x.toFixed(1)}" cy="${peakPoint.y.toFixed(1)}" r="4.5" fill="#B4652E"/>
-      <text class="peak peaklabel" x="${Math.max(peakPoint.x - 6, 90).toFixed(1)}" y="${(peakPoint.y - 2).toFixed(1)}" text-anchor="end">${peak.answerLen.toLocaleString()}字 ・ ${esc(truncate(peak.question, 16))}</text>`
-    : "";
-  return `<div class="chartbox">
-        <svg viewBox="0 0 ${CHART_W} ${CHART_H}" role="img" aria-label="応答文字数の時系列。最大は${peak ? peak.answerLen : 0}字。">
+  if (!chartDays.length) return `<p class="insight">データがまだありません。</p>`;
+  const yMid = Math.round(yMax / 2);
+  const gridLines = `<line x1="${plotLeft}" y1="${plotTop}" x2="${plotRight}" y2="${plotTop}"/><line x1="${plotLeft}" y1="${yOfCount(yMid).toFixed(1)}" x2="${plotRight}" y2="${yOfCount(yMid).toFixed(1)}"/><line x1="${plotLeft}" y1="${plotBottom}" x2="${plotRight}" y2="${plotBottom}"/>`;
+  // 日付ラベルは密集したら間引く（棒とネイティブツールチップは全日分）
+  const labelEvery = Math.max(1, Math.ceil(34 / Math.max(slotW, 1)));
+  const groups = chartDays
+    .map((d, i) => {
+      const x0 = plotLeft + i * slotW + (slotW - (barW * 2 + 2)) / 2;
+      const tTop = yOfCount(d.turns), cTop = yOfCount(d.convs);
+      const parts = [`<title>${esc(d.day)}　やりとり ${d.turns}ターン ・ 会話 ${d.convs}件</title>`];
+      if (d.turns > 0) parts.push(`<path fill="#1D62B3" d="${barPath(x0, tTop, barW, plotBottom)}"/>`);
+      if (d.convs > 0) parts.push(`<path fill="#B4652E" d="${barPath(x0 + barW + 2, cTop, barW, plotBottom)}"/>`);
+      if (i % labelEvery === 0) parts.push(`<text class="axis" text-anchor="middle" x="${(plotLeft + i * slotW + slotW / 2).toFixed(1)}" y="${plotBottom + 13}">${d.day.slice(5)}</text>`);
+      if (peakDay && d.day === peakDay.day && d.turns > 0) parts.push(`<text class="vlab" text-anchor="middle" x="${(x0 + barW / 2).toFixed(1)}" y="${(tTop - 4).toFixed(1)}">${d.turns}</text>`);
+      return `<g>${parts.join("")}</g>`;
+    })
+    .join("\n          ");
+  return `<div class="legend"><span class="lg"><i style="background:#1D62B3"></i>やりとり（ターン）</span><span class="lg"><i style="background:#B4652E"></i>会話</span></div>
+      <div class="chartbox">
+        <svg viewBox="0 0 ${CHART_W} ${CHART_H}" style="min-width:${Math.max(520, chartDays.length * SLOT_MIN)}px" role="img" aria-label="日別の利用量。最も多い日は${peakDay ? `${peakDay.day}の${peakDay.turns}ターン` : "なし"}。">
           <g stroke="#CBD7E0" stroke-width="1">${gridLines}</g>
-          <text class="axis" x="${plotLeft}" y="${plotTop - 4}">字数</text>
-          <text class="axis" x="${plotLeft}" y="${((plotTop + plotBottom) / 2 + 3).toFixed(1)}">${gridMidLabel}</text>
-          <text class="axis" x="${plotLeft}" y="${plotBottom + 12}">0</text>
-          <g stroke="#CBD7E0" stroke-width="1">${dayTickMarks}</g>
-          ${dayTickLabels}
-          <g stroke="#728398" stroke-width="1" stroke-dasharray="3 4" opacity=".45">${boundaries}</g>
-          ${boundaryLabels}
-          <path class="depthfill" fill="rgba(29,98,179,.14)" d="${areaPath}"/>
-          <path class="depthline" fill="none" stroke="#1D62B3" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" pathLength="1" d="${linePath}"/>
-          ${peakLabel}
+          <text class="axis" x="4" y="${plotTop + 3}">${yMax}</text>
+          <text class="axis" x="4" y="${(yOfCount(yMid) + 3).toFixed(1)}">${yMid}</text>
+          <text class="axis" x="4" y="${plotBottom + 3}">0</text>
+          ${groups}
         </svg>
       </div>`;
 }
@@ -560,11 +541,13 @@ const html = `<!doctype html>
   .day .n .su{font-size:.72rem;font-weight:500;color:var(--ink-3)}
 
   .depth{background:var(--card);border:1px solid var(--rule);border-radius:8px;padding:clamp(18px,2.5vw,26px)}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;font-size:.82rem;color:var(--ink-2)}
+  .legend .lg{display:inline-flex;align-items:center;gap:7px}
+  .legend .lg i{width:10px;height:10px;border-radius:3px;display:inline-block}
   .chartbox{overflow-x:auto;margin-top:8px}
   .chartbox svg{width:100%;min-width:520px;height:auto;display:block}
   .axis{font-family:var(--mono);font-size:10px;fill:#728398}
-  .glab{font-family:var(--mono);font-size:9.5px;fill:#728398}
-  .peak{font-family:var(--mono);font-size:11px;fill:#B4652E;font-weight:600}
+  .vlab{font-family:var(--mono);font-size:10px;fill:#3D5069;font-weight:600}
 
   .threads{display:flex;flex-direction:column;gap:16px}
   .thread{background:var(--card);border:1px solid var(--rule);border-radius:8px;overflow:hidden}
@@ -678,8 +661,8 @@ const html = `<!doctype html>
 
   <section>
     <div class="sec-head">
-      <h2>深掘りするほど、いせちゃんの答えは長くなる傾向</h2>
-      <p class="sub">応答の文字数を時系列で。会話の切れ目を点線で表示。</p>
+      <h2>日ごとの利用量</h2>
+      <p class="sub">1日にどれだけ使われたか。会話（利用のひとまとまり）とやりとり（ターン）の数を日別に表示。</p>
     </div>
     <div class="depth in-target">
       ${renderChart()}
@@ -739,6 +722,7 @@ const html = `<!doctype html>
   <footer class="foot">
     <p><b>データソース</b> ｜ <span class="mono">inexus-prod.ise_analytics.run_googleapis_com_stdout</span>（Cloud Run <span class="mono">ise-api</span> の stdout ログを Cloud Logging 経由で BigQuery に転送）</p>
     <p><b>集計</b> ｜ ${esc(dataRangeLabel)}（JST）。「質問の内訳」はAIによる推定分類。</p>
+    <p><b>「会話」の単位</b> ｜ 連続したやりとりのひとまとまり（1回の利用）を1会話と数えています。ログには利用者を識別する情報が無いため同じ人の再訪は区別できず、会話数は「利用された回数」のおおよその近似です。</p>
     <p><b>更新について</b> ｜ このダッシュボードは日次で自動更新されます（BigQueryから直接再生成）。最終更新: ${esc(updated)}</p>
   </footer>
 

@@ -62,15 +62,18 @@ nav.side{
   width:var(--rail-w);
   background:#eef2fb; border-right:1px solid #d8e2f6;
   overflow-x:hidden; overflow-y:auto; scrollbar-width:thin; padding:8px;
-  transform:translateX(0); transition:width .18s ease, transform .18s ease, box-shadow .18s ease;
+  transform:translateX(0); transition:width .2s ease, transform .2s ease, box-shadow .2s ease;
   box-shadow:3px 0 12px rgba(20,40,90,.10);
 }
 nav.side::-webkit-scrollbar{ width:7px; }
 nav.side::-webkit-scrollbar-thumb{ background:#c7d6f3; border-radius:4px; }
 body.nav-open nav.side{ width:var(--side-w); box-shadow:6px 0 24px rgba(20,40,90,.22); }
 
+/* 項目は常に「展開時の幅」で固定。レール↔展開で nav の幅をアニメーションしても、項目内部の
+   レイアウト（ラベルの折り返し行数）が一切変わらないため reflow が起きず、滑らかに開閉する。
+   レール時は nav を狭めて右側（ラベル）をはみ出しクリップするだけ。アイコン位置も不動。 */
 .navitem{
-  display:flex; align-items:center; gap:9px; width:100%;
+  display:flex; align-items:center; gap:9px; width:calc(var(--side-w) - 16px);
   border:1px solid transparent; background:transparent; color:#1e46aa;
   font-weight:700; font-size:12.5px; padding:9px 11px; border-radius:9px;
   cursor:pointer; text-align:left; line-height:1.35; margin-bottom:3px; transition:background .13s, color .13s;
@@ -78,22 +81,22 @@ body.nav-open nav.side{ width:var(--side-w); box-shadow:6px 0 24px rgba(20,40,90
 .navitem:hover{ background:#e2ecff; }
 .navitem.active{ background:#285ac8; color:#fff; box-shadow:0 2px 8px rgba(40,90,200,.20); }
 .ni-ic{ flex:0 0 auto; width:22px; text-align:center; font-size:16px; line-height:1; }
-.ni-tx{ flex:1 1 auto; min-width:0; white-space:normal; overflow:hidden; }
+/* ラベルは display 切替ではなく opacity でフェード（reflow を避け、アイコンも動かさない） */
+.ni-tx{ flex:1 1 auto; min-width:0; white-space:normal; overflow:hidden; transition:opacity .16s ease; }
+body:not(.nav-open) .ni-tx{ opacity:0; }
 
-/* レール状（未展開）: アイコンを中央寄せしラベルは隠す */
-body:not(.nav-open) .navitem{ justify-content:center; padding-left:6px; padding-right:6px; }
-body:not(.nav-open) .ni-tx{ display:none; }
-
-/* フル展開中だけ出る半透明スクリム（クリックで閉じる） */
-.scrim{ position:absolute; inset:0; z-index:12; background:rgba(20,30,60,.28); display:none; }
-body.nav-open .scrim{ display:block; }
+/* フル展開中だけ出る半透明スクリム（フェード表示。クリックで閉じる） */
+.scrim{
+  position:absolute; inset:0; z-index:12; background:rgba(20,30,60,.28);
+  opacity:0; visibility:hidden; transition:opacity .18s ease, visibility .18s ease;
+}
+body.nav-open .scrim{ opacity:1; visibility:visible; }
 
 /* モバイル: レールは出さず、閉状態は完全に隠す。☰タップでフル展開 */
 @media (max-width:640px){
   nav.side{ width:min(var(--side-w),82vw); transform:translateX(-100%); box-shadow:4px 0 20px rgba(20,40,90,.22); }
   body.nav-open nav.side{ width:min(var(--side-w),82vw); transform:translateX(0); }
-  body:not(.nav-open) .navitem{ justify-content:flex-start; padding-left:11px; padding-right:11px; }
-  body:not(.nav-open) .ni-tx{ display:block; }
+  body:not(.nav-open) .ni-tx{ opacity:1; }
 }
 </style>
 </head>

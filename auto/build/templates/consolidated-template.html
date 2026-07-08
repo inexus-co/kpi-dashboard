@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>インネクサス｜統合KPIダッシュボード</title>
 <style>
-:root{ color-scheme: light; --side-w:224px; --bar-h:40px; }
+:root{ color-scheme: light; --side-w:236px; --bar-h:40px; }
 *{ box-sizing:border-box; }
 html,body{ height:100%; }
 body{
@@ -14,7 +14,7 @@ body{
   background:#f7f5f5; color:#23418c;
 }
 
-/* ===== 上部スリムバー（1行に圧縮） ===== */
+/* ===== 上部スリムバー（1行） ===== */
 header.appbar{
   flex:0 0 auto; height:var(--bar-h); display:flex; align-items:center; gap:10px;
   padding:0 14px; color:#fff; z-index:20;
@@ -22,36 +22,30 @@ header.appbar{
   box-shadow:0 2px 10px rgba(30,70,170,.18);
 }
 .menu-btn{
-  flex:0 0 auto; width:30px; height:30px; display:flex; align-items:center; justify-content:center;
-  border:0; border-radius:8px; background:rgba(255,255,255,.14); color:#fff; cursor:pointer;
-  font-size:15px; line-height:1; transition:.15s;
+  flex:0 0 auto; height:30px; display:flex; align-items:center; gap:6px;
+  padding:0 11px; border:0; border-radius:8px; background:rgba(255,255,255,.14);
+  color:#fff; cursor:pointer; font-size:13px; font-weight:700; line-height:1; transition:.15s;
 }
 .menu-btn:hover{ background:rgba(255,255,255,.26); }
+.menu-btn .ic{ font-size:15px; }
 header.appbar h1{
-  margin:0; font-size:14.5px; font-weight:700; letter-spacing:.02em;
+  margin:0; flex:0 0 auto; font-size:14px; font-weight:700; letter-spacing:.02em; white-space:nowrap;
+}
+header.appbar .crumb{
+  flex:0 1 auto; min-width:0; font-size:12.5px; font-weight:700; opacity:.96;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
+header.appbar .crumb::before{ content:"／"; opacity:.55; margin:0 8px 0 4px; }
 header.appbar .meta{ margin-left:auto; flex:0 0 auto; font-size:11px; opacity:.85; white-space:nowrap; }
-
-/* ===== 本体（左サイドバー + ステージ） ===== */
-.body{ flex:1 1 auto; display:flex; min-height:0; position:relative; }
-
-nav.side{
-  flex:0 0 auto; width:var(--side-w); background:#eef2fb; border-right:1px solid #d8e2f6;
-  overflow-y:auto; scrollbar-width:thin; padding:8px;
-  transition:width .18s ease, transform .18s ease;
+@media (max-width:560px){
+  header.appbar h1, header.appbar .meta{ display:none; }
+  header.appbar .crumb::before{ content:none; }
 }
-nav.side::-webkit-scrollbar{ width:7px; }
-nav.side::-webkit-scrollbar-thumb{ background:#c7d6f3; border-radius:4px; }
-.navitem{
-  display:block; width:100%; text-align:left; border:1px solid transparent; background:transparent;
-  color:#1e46aa; font-weight:700; font-size:12.5px; padding:9px 11px; border-radius:9px;
-  cursor:pointer; white-space:normal; line-height:1.35; margin-bottom:3px; transition:.13s;
-}
-.navitem:hover{ background:#e2ecff; }
-.navitem.active{ background:#285ac8; color:#fff; box-shadow:0 2px 8px rgba(40,90,200,.20); }
 
-main.stage{ flex:1 1 auto; position:relative; background:#fff; min-width:0; }
+/* ===== 本体: コンテンツは常に全幅。サイドバーは左オーバーレイ（ドロワー） ===== */
+.body{ flex:1 1 auto; position:relative; min-height:0; }
+
+main.stage{ position:absolute; inset:0; background:#fff; }
 main.stage iframe{
   position:absolute; inset:0; width:100%; height:100%; border:0; display:block; background:#fff;
 }
@@ -61,42 +55,47 @@ main.stage iframe{
 }
 .err{ color:#dc1e32; font-size:13px; padding:24px; text-align:center; }
 
-/* ===== 折りたたみ（デスクトップ: 幅0でコンテンツを全幅化） ===== */
-body.nav-collapsed nav.side{
-  width:0; padding-left:0; padding-right:0; border-right:0; overflow:hidden;
+/* ドロワー本体（コンテンツ幅は奪わずに上へ重なる） */
+nav.side{
+  position:absolute; top:0; left:0; bottom:0; z-index:15;
+  width:min(var(--side-w),82vw);
+  background:#eef2fb; border-right:1px solid #d8e2f6;
+  overflow-y:auto; scrollbar-width:thin; padding:8px;
+  transform:translateX(0); transition:transform .18s ease;
+  box-shadow:4px 0 20px rgba(20,40,90,.22);
 }
+nav.side::-webkit-scrollbar{ width:7px; }
+nav.side::-webkit-scrollbar-thumb{ background:#c7d6f3; border-radius:4px; }
+body.nav-collapsed nav.side{ transform:translateX(-100%); }
 
-/* ===== スクリム（モバイルのオーバーレイ時のみ） ===== */
-.scrim{ display:none; }
-
-/* ===== モバイル: サイドバーは左からのオーバーレイ ===== */
-@media (max-width:640px){
-  nav.side{
-    position:absolute; top:0; left:0; bottom:0; z-index:15;
-    width:min(78vw,var(--side-w)); transform:translateX(0);
-    box-shadow:4px 0 18px rgba(20,40,90,.22);
-  }
-  body.nav-collapsed nav.side{
-    width:min(78vw,var(--side-w)); transform:translateX(-100%);
-    padding:8px; border-right:1px solid #d8e2f6; overflow-y:auto;
-  }
-  .scrim{ position:absolute; inset:0; z-index:12; background:rgba(20,30,60,.28); }
-  body:not(.nav-collapsed) .scrim{ display:block; }
+.navitem{
+  display:block; width:100%; text-align:left; border:1px solid transparent; background:transparent;
+  color:#1e46aa; font-weight:700; font-size:12.5px; padding:9px 11px; border-radius:9px;
+  cursor:pointer; white-space:normal; line-height:1.35; margin-bottom:3px; transition:.13s;
 }
+.navitem:hover{ background:#e2ecff; }
+.navitem.active{ background:#285ac8; color:#fff; box-shadow:0 2px 8px rgba(40,90,200,.20); }
+
+/* ドロワーを開いている間だけ出る半透明スクリム（クリックで閉じる） */
+.scrim{ position:absolute; inset:0; z-index:12; background:rgba(20,30,60,.30); display:none; }
+body:not(.nav-collapsed) .scrim{ display:block; }
 </style>
 </head>
-<body>
+<body class="nav-collapsed">
 <header class="appbar">
-  <button class="menu-btn" id="menuBtn" aria-label="メニュー開閉" title="メニュー開閉">☰</button>
-  <h1>インネクサス｜統合KPIダッシュボード</h1>
+  <button class="menu-btn" id="menuBtn" aria-label="ダッシュボード一覧を開閉" title="ダッシュボード一覧を開閉" aria-expanded="false">
+    <span class="ic">☰</span><span>一覧</span>
+  </button>
+  <h1>インネクサス｜統合KPI</h1>
+  <span class="crumb" id="crumb"></span>
   <div class="meta" id="meta"></div>
 </header>
 <div class="body">
-  <nav class="side" id="tabs" role="tablist" aria-label="ダッシュボード一覧"></nav>
-  <div class="scrim" id="scrim"></div>
   <main class="stage" id="stage">
     <div class="loading" id="loading">読み込み中…</div>
   </main>
+  <div class="scrim" id="scrim"></div>
+  <nav class="side" id="tabs" role="tablist" aria-label="ダッシュボード一覧"></nav>
 </div>
 <script>
 const CFG = /*__CFG__*/;
@@ -104,24 +103,24 @@ const CFG = /*__CFG__*/;
 const tabsEl  = document.getElementById('tabs');
 const stageEl = document.getElementById('stage');
 const metaEl  = document.getElementById('meta');
+const crumbEl = document.getElementById('crumb');
 const menuBtn = document.getElementById('menuBtn');
 const scrimEl = document.getElementById('scrim');
 const frames  = {}; // id -> iframe (lazy-mounted, kept after first mount)
 let activeId  = null;
-const mq = window.matchMedia('(max-width:640px)');
-const LS_KEY = 'kpi-nav-collapsed';
 
 metaEl.textContent = CFG.updated ? ('最終更新: ' + CFG.updated) : '';
 
-function isMobile(){ return mq.matches; }
+// ドロワー開閉。コンテンツはオーバーレイで幅を奪わないため、開閉で本文幅は変わらない。
 function setCollapsed(c){
   document.body.classList.toggle('nav-collapsed', c);
-  if (!isMobile()) { try { localStorage.setItem(LS_KEY, c ? '1' : '0'); } catch(e){} }
+  menuBtn.setAttribute('aria-expanded', String(!c));
 }
 function toggle(){ setCollapsed(!document.body.classList.contains('nav-collapsed')); }
 
 menuBtn.addEventListener('click', toggle);
 scrimEl.addEventListener('click', () => setCollapsed(true));
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setCollapsed(true); });
 
 function mount(id){
   if (frames[id]) return frames[id];
@@ -137,13 +136,15 @@ function mount(id){
   return f;
 }
 
+// ダッシュボード表示の切替のみを担う（ドロワー開閉には触れない）。
 function show(id){
   const f = mount(id);
   if (!f) return;
   Object.keys(frames).forEach(k => { frames[k].style.display = (k === id ? 'block' : 'none'); });
   Array.from(tabsEl.children).forEach(b => b.classList.toggle('active', b.dataset.id === id));
+  const d = CFG.dashboards.find(x => x.id === id);
+  crumbEl.textContent = d ? d.label : '';
   activeId = id;
-  if (isMobile()) setCollapsed(true); // モバイルは選択後にサイドバーを閉じる
 }
 
 (function init(){
@@ -158,17 +159,13 @@ function show(id){
     b.textContent = d.label;
     b.dataset.id = d.id;
     b.setAttribute('role','tab');
-    b.addEventListener('click', () => show(d.id));
+    // 項目を選んだらドロワーは閉じ、全幅のコンテンツを表示する
+    b.addEventListener('click', () => { show(d.id); setCollapsed(true); });
     tabsEl.appendChild(b);
   });
   const lo = document.getElementById('loading'); if (lo) lo.remove();
 
-  // 初期の折りたたみ状態: モバイルは既定で閉じる / デスクトップは前回の選好を復元
-  let collapsed;
-  if (isMobile()) { collapsed = true; }
-  else { try { collapsed = localStorage.getItem(LS_KEY) === '1'; } catch(e){ collapsed = false; } }
-  document.body.classList.toggle('nav-collapsed', collapsed);
-
+  // 既定は閉じた状態で起動（コンテンツを全幅表示 → 横スクロールを出さない）。
   show(list[0].id);
 })();
 </script>

@@ -27,17 +27,19 @@ if (!password || !outPath) {
 const ROOT = path.resolve(__dirname, '..', '..');           // repo root (auto/build -> ..)
 const TPL  = path.join(__dirname, 'templates', 'consolidated-template.html');
 
-// タブの順序とラベル（#op-insights の投稿名に準拠）
+// タブの順序・ラベル・アイコン（#op-insights の投稿名に準拠）
+// icon はサイドバーをレール状に折りたたんだ際の識別用（絵文字1つ）。ラベル先頭が重複する
+// 項目が多いため、数文字よりアイコンの方が見分けやすい。
 const DASHBOARDS = [
-  { id: 'kpi',        file: 'index.html',                 label: '採点くん/まなんでパズル KPI' },
-  { id: 'saiten-fb',  file: 'saiten-feedback.html',       label: '採点くん フィードバック' },
-  { id: 'puzzle-fb',  file: 'puzzle-feedback.html',       label: 'まなんでパズル フィードバック' },
-  { id: 'kids',       file: 'kids-usage.html',            label: 'まなんでパズル 利用実績' },
-  { id: 'web',        file: 'web-analytics.html',         label: 'まなんでパズル Webアクセス分析' },
-  { id: 'social',     file: 'social-analytics.html',      label: 'ソーシャル分析(YouTube)' },
-  { id: 'competitor', file: 'competitor-monitoring.html', label: '競合アプリ定点観測' },
-  { id: 'freee',      file: 'freee.html',                 label: '経営(freee)' },
-  { id: 'ise',        file: 'ise-chat-usage.html',         label: 'いせちゃん対話ログ' },
+  { id: 'kpi',        file: 'index.html',                 label: '採点くん/まなんでパズル KPI', icon: '📊' },
+  { id: 'saiten-fb',  file: 'saiten-feedback.html',       label: '採点くん フィードバック',       icon: '📝' },
+  { id: 'puzzle-fb',  file: 'puzzle-feedback.html',       label: 'まなんでパズル フィードバック', icon: '🧩' },
+  { id: 'kids',       file: 'kids-usage.html',            label: 'まなんでパズル 利用実績',       icon: '🎮' },
+  { id: 'web',        file: 'web-analytics.html',         label: 'まなんでパズル Webアクセス分析', icon: '🌐' },
+  { id: 'social',     file: 'social-analytics.html',      label: 'ソーシャル分析(YouTube)',       icon: '▶️' },
+  { id: 'competitor', file: 'competitor-monitoring.html', label: '競合アプリ定点観測',            icon: '🔭' },
+  { id: 'freee',      file: 'freee.html',                 label: '経営(freee)',                   icon: '💰' },
+  { id: 'ise',        file: 'ise-chat-usage.html',         label: 'いせちゃん対話ログ',            icon: '💬' },
 ];
 
 // encrypt-wrap.js が出力する鍵情報を抽出する。2形式に対応:
@@ -105,7 +107,7 @@ for (const d of DASHBOARDS) {
   if (!/<html|<!doctype/i.test(inner)) {
     console.warn('[warn] decrypted content does not look like HTML:', d.file);
   }
-  out.push({ id: d.id, label: d.label, html: inner });
+  out.push({ id: d.id, label: d.label, icon: d.icon, html: inner });
   console.log('[ok]', d.file, '->', d.id, `(${inner.length} bytes)`);
 }
 

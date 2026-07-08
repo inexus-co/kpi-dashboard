@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>インネクサス｜統合KPIダッシュボード</title>
 <style>
-:root{ color-scheme: light; --side-w:236px; --bar-h:40px; }
+:root{ color-scheme: light; --side-w:236px; --rail-w:54px; --bar-h:40px; }
 *{ box-sizing:border-box; }
 html,body{ height:100%; }
 body{
@@ -42,7 +42,7 @@ header.appbar .meta{ margin-left:auto; flex:0 0 auto; font-size:11px; opacity:.8
   header.appbar .crumb::before{ content:none; }
 }
 
-/* ===== 本体: コンテンツは常に全幅。サイドバーは左オーバーレイ（ドロワー） ===== */
+/* ===== 本体: コンテンツは常に全幅。サイドバーは左オーバーレイ ===== */
 .body{ flex:1 1 auto; position:relative; min-height:0; }
 
 main.stage{ position:absolute; inset:0; background:#fff; }
@@ -55,35 +55,51 @@ main.stage iframe{
 }
 .err{ color:#dc1e32; font-size:13px; padding:24px; text-align:center; }
 
-/* ドロワー本体（コンテンツ幅は奪わずに上へ重なる） */
+/* サイドバー: 既定は細いレール（アイコンのみ）。hoverで --side-w までフル展開。
+   コンテンツ幅は奪わずに上へ重なるため、開閉で本文幅は変わらない＝横スクロールを出さない。 */
 nav.side{
   position:absolute; top:0; left:0; bottom:0; z-index:15;
-  width:min(var(--side-w),82vw);
+  width:var(--rail-w);
   background:#eef2fb; border-right:1px solid #d8e2f6;
-  overflow-y:auto; scrollbar-width:thin; padding:8px;
-  transform:translateX(0); transition:transform .18s ease;
-  box-shadow:4px 0 20px rgba(20,40,90,.22);
+  overflow-x:hidden; overflow-y:auto; scrollbar-width:thin; padding:8px;
+  transform:translateX(0); transition:width .18s ease, transform .18s ease, box-shadow .18s ease;
+  box-shadow:3px 0 12px rgba(20,40,90,.10);
 }
 nav.side::-webkit-scrollbar{ width:7px; }
 nav.side::-webkit-scrollbar-thumb{ background:#c7d6f3; border-radius:4px; }
-body.nav-collapsed nav.side{ transform:translateX(-100%); }
+body.nav-open nav.side{ width:var(--side-w); box-shadow:6px 0 24px rgba(20,40,90,.22); }
 
 .navitem{
-  display:block; width:100%; text-align:left; border:1px solid transparent; background:transparent;
-  color:#1e46aa; font-weight:700; font-size:12.5px; padding:9px 11px; border-radius:9px;
-  cursor:pointer; white-space:normal; line-height:1.35; margin-bottom:3px; transition:.13s;
+  display:flex; align-items:center; gap:9px; width:100%;
+  border:1px solid transparent; background:transparent; color:#1e46aa;
+  font-weight:700; font-size:12.5px; padding:9px 11px; border-radius:9px;
+  cursor:pointer; text-align:left; line-height:1.35; margin-bottom:3px; transition:background .13s, color .13s;
 }
 .navitem:hover{ background:#e2ecff; }
 .navitem.active{ background:#285ac8; color:#fff; box-shadow:0 2px 8px rgba(40,90,200,.20); }
+.ni-ic{ flex:0 0 auto; width:22px; text-align:center; font-size:16px; line-height:1; }
+.ni-tx{ flex:1 1 auto; min-width:0; white-space:normal; overflow:hidden; }
 
-/* ドロワーを開いている間だけ出る半透明スクリム（クリックで閉じる） */
-.scrim{ position:absolute; inset:0; z-index:12; background:rgba(20,30,60,.30); display:none; }
-body:not(.nav-collapsed) .scrim{ display:block; }
+/* レール状（未展開）: アイコンを中央寄せしラベルは隠す */
+body:not(.nav-open) .navitem{ justify-content:center; padding-left:6px; padding-right:6px; }
+body:not(.nav-open) .ni-tx{ display:none; }
+
+/* フル展開中だけ出る半透明スクリム（クリックで閉じる） */
+.scrim{ position:absolute; inset:0; z-index:12; background:rgba(20,30,60,.28); display:none; }
+body.nav-open .scrim{ display:block; }
+
+/* モバイル: レールは出さず、閉状態は完全に隠す。☰タップでフル展開 */
+@media (max-width:640px){
+  nav.side{ width:min(var(--side-w),82vw); transform:translateX(-100%); box-shadow:4px 0 20px rgba(20,40,90,.22); }
+  body.nav-open nav.side{ width:min(var(--side-w),82vw); transform:translateX(0); }
+  body:not(.nav-open) .navitem{ justify-content:flex-start; padding-left:11px; padding-right:11px; }
+  body:not(.nav-open) .ni-tx{ display:block; }
+}
 </style>
 </head>
-<body class="nav-collapsed">
+<body>
 <header class="appbar">
-  <button class="menu-btn" id="menuBtn" aria-label="ダッシュボード一覧を開閉" title="ダッシュボード一覧を開閉" aria-expanded="false">
+  <button class="menu-btn" id="menuBtn" aria-label="ダッシュボード一覧を開閉" title="ダッシュボード一覧（ホバーで展開）" aria-expanded="false">
     <span class="ic">☰</span><span>一覧</span>
   </button>
   <h1>インネクサス｜統合KPI</h1>
@@ -108,19 +124,29 @@ const menuBtn = document.getElementById('menuBtn');
 const scrimEl = document.getElementById('scrim');
 const frames  = {}; // id -> iframe (lazy-mounted, kept after first mount)
 let activeId  = null;
+const hoverCapable = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+let closeTimer = null;
 
 metaEl.textContent = CFG.updated ? ('最終更新: ' + CFG.updated) : '';
 
-// ドロワー開閉。コンテンツはオーバーレイで幅を奪わないため、開閉で本文幅は変わらない。
-function setCollapsed(c){
-  document.body.classList.toggle('nav-collapsed', c);
-  menuBtn.setAttribute('aria-expanded', String(!c));
-}
-function toggle(){ setCollapsed(!document.body.classList.contains('nav-collapsed')); }
+// ドロワー開閉。コンテンツはオーバーレイなので開閉しても本文幅は変わらない。
+function openNav(){ clearTimeout(closeTimer); document.body.classList.add('nav-open'); menuBtn.setAttribute('aria-expanded','true'); }
+function closeNav(){ clearTimeout(closeTimer); document.body.classList.remove('nav-open'); menuBtn.setAttribute('aria-expanded','false'); }
+function toggleNav(){ document.body.classList.contains('nav-open') ? closeNav() : openNav(); }
+// ホバー外れで少し待ってから閉じる（☰とレールの間を横切る際のちらつき防止）
+function scheduleClose(){ clearTimeout(closeTimer); closeTimer = setTimeout(closeNav, 220); }
 
-menuBtn.addEventListener('click', toggle);
-scrimEl.addEventListener('click', () => setCollapsed(true));
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setCollapsed(true); });
+menuBtn.addEventListener('click', toggleNav);
+scrimEl.addEventListener('click', closeNav);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeNav(); });
+
+// ホバー可能デバイスでは、☰ またはレールにマウスを載せるだけで展開する。
+if (hoverCapable){
+  menuBtn.addEventListener('mouseenter', openNav);
+  menuBtn.addEventListener('mouseleave', scheduleClose);
+  tabsEl.addEventListener('mouseenter', openNav);
+  tabsEl.addEventListener('mouseleave', scheduleClose);
+}
 
 function mount(id){
   if (frames[id]) return frames[id];
@@ -136,7 +162,7 @@ function mount(id){
   return f;
 }
 
-// ダッシュボード表示の切替のみを担う（ドロワー開閉には触れない）。
+// ダッシュボード表示の切替のみを担う（開閉には触れない）。
 function show(id){
   const f = mount(id);
   if (!f) return;
@@ -156,16 +182,19 @@ function show(id){
   list.forEach(d => {
     const b = document.createElement('button');
     b.className = 'navitem';
-    b.textContent = d.label;
     b.dataset.id = d.id;
     b.setAttribute('role','tab');
-    // 項目を選んだらドロワーは閉じ、全幅のコンテンツを表示する
-    b.addEventListener('click', () => { show(d.id); setCollapsed(true); });
+    b.title = d.label;
+    const ic = document.createElement('span'); ic.className = 'ni-ic'; ic.textContent = d.icon || '•';
+    const tx = document.createElement('span'); tx.className = 'ni-tx'; tx.textContent = d.label;
+    b.appendChild(ic); b.appendChild(tx);
+    // 項目を選んだらレール状に戻し、全幅のコンテンツを表示する
+    b.addEventListener('click', () => { show(d.id); closeNav(); });
     tabsEl.appendChild(b);
   });
   const lo = document.getElementById('loading'); if (lo) lo.remove();
 
-  // 既定は閉じた状態で起動（コンテンツを全幅表示 → 横スクロールを出さない）。
+  // 既定はレール状（デスクトップ）/ 非表示（モバイル）で起動。コンテンツは全幅。
   show(list[0].id);
 })();
 </script>

@@ -99,7 +99,6 @@ const totalTurns = rows.length;
 const totalConvs = conversations.length;
 const totalErrors = rows.filter((t) => t.error).length;
 const avgTurns = totalConvs ? totalTurns / totalConvs : 0;
-const longest = conversations.reduce((a, b) => (b.turns.length > (a ? a.turns.length : 0) ? b : a), null);
 
 const MATERIAL_RE = /https:\/\/ise-rika\.cf\.ocha\.ac\.jp\/(\d+)/g;
 // 同じ行に説明文があればそれをそのまま使う（1行完結の箇条書き向け）。
@@ -146,13 +145,31 @@ for (const t of rows) {
 }
 const materialList = [...materials.values()].sort((a, b) => b.count - a.count);
 
+// 「教材データベースの案内役」としてどれだけ機能できているかを測る。
+// 教材リンクを1本でも含む応答＝実際にDBへ誘導できたやりとり。
+const turnsWithMaterial = rows.filter((t) => /https:\/\/ise-rika\.cf\.ocha\.ac\.jp\/\d+/.test(t.answer)).length;
+const materialRate = totalTurns ? (turnsWithMaterial / totalTurns) * 100 : 0;
+const convsWithMaterial = conversations.filter((c) =>
+  c.turns.some((t) => /https:\/\/ise-rika\.cf\.ocha\.ac\.jp\/\d+/.test(t.answer))
+).length;
+// 探したが見つけられなかったことを明示した応答（教材DBのカバー不足が表に出たケース）
+const NOT_FOUND_RE = /見つかりませんでし|見つけられませんでし|特定できませんでし|該当する教材(は|が)(ありません|見当たりません)|教材は見つかり/;
+const turnsNotFound = rows.filter((t) => NOT_FOUND_RE.test(t.answer)).length;
+
+// 会話の深さ。1往復で終わった会話は「聞いて終わり」で、継続利用に至っていない。
+const singleTurnConvs = conversations.filter((c) => c.turns.length === 1).length;
+const singleTurnRate = totalConvs ? (singleTurnConvs / totalConvs) * 100 : 0;
+
+// 分類は「会話の起点response_id」に対して付けているので、集計も会話単位で数える。
+// （以前はターン数で重み付けしていたため、200ターン超の長い雑談1件だけで
+//   「きもち・ざつだん」が実態より大きく膨らんでいた）
 const convClassCounts = { learn: 0, chat: 0, find: 0, unclassified: 0 };
 for (const c of conversations) {
   const cls = ai.classifications && ai.classifications[c.rootId];
   const key = cls === "learn" || cls === "chat" || cls === "find" ? cls : "unclassified";
-  convClassCounts[key] += c.turns.length;
+  convClassCounts[key] += 1;
 }
-const hasClassification = convClassCounts.unclassified < totalTurns;
+const hasClassification = convClassCounts.unclassified < totalConvs;
 
 // 時間帯（0-5/6-11/12-17/18-23）と日別
 const HOUR_BUCKETS = [
@@ -191,8 +208,19 @@ if (allDays.length) {
     chartDays.push({ day, turns: d ? d.turns : 0, convs: d ? d.convs : 0 });
   }
 }
+// 日ごとの増減が大きく（授業日と休みで開きがある）、日別の棒だけでは
+// 「使われ方が伸びているのか落ちているのか」が読めないため7日移動平均を重ねる。
+const MA_WINDOW = 7;
+chartDays.forEach((d, i) => {
+  const from = Math.max(0, i - MA_WINDOW + 1);
+  const win = chartDays.slice(from, i + 1);
+  d.ma = win.reduce((s, x) => s + x.turns, 0) / win.length;
+});
+
 const CHART_H = 210, PAD_L = 30, PAD_R = 8, PAD_TOP = 18, PAD_BOTTOM = 26;
-const SLOT_MIN = 26; // 1日あたりの最小幅。日数が増えたら横スクロールで伸ばす
+// 1日あたりの最小幅。運用日数が伸びるほど横に長くなるため、
+// 2か月程度なら1画面に収まる密度にしてある（それを超えたら横スクロール）。
+const SLOT_MIN = 16;
 const CHART_W = Math.max(720, PAD_L + PAD_R + chartDays.length * SLOT_MIN);
 const plotTop = PAD_TOP, plotBottom = CHART_H - PAD_BOTTOM, plotLeft = PAD_L, plotRight = CHART_W - PAD_R;
 const slotW = chartDays.length ? (plotRight - plotLeft) / chartDays.length : 0;
@@ -224,8 +252,9 @@ const daySpan = allDays.length
   ? Math.round((Date.parse(allDays[allDays.length - 1].day) - Date.parse(allDays[0].day)) / 86400000) + 1
   : 0;
 
-const CONV_DISPLAY_LIMIT = 50;
-const MATERIAL_DISPLAY_LIMIT = 24;
+// 「どんな質問が来ているか」を先生方に見ていただくのが主目的なので、会話ログは厚めに載せる。
+const CONV_DISPLAY_LIMIT = 120;
+const MATERIAL_DISPLAY_LIMIT = 40;
 // 表示は「最終やりとり」の新しい順（日をまたいで再開された会話が古い側に埋もれないように）
 const convsToShow = conversations.slice().sort((a, b) => b.endTs - a.endTs).slice(0, CONV_DISPLAY_LIMIT);
 const convOmitted = conversations.length - convsToShow.length;
@@ -251,14 +280,14 @@ function renderIntentPanel() {
         <p class="phint">AIによる分類はまだありません（次回以降のAI集計で表示されます）</p>
       </div>`;
   }
-  const total = totalTurns || 1;
+  const total = totalConvs || 1;
   const rows2 = ["learn", "chat", "find"]
     .map((k) => ({ k, n: convClassCounts[k], pct: Math.round((convClassCounts[k] / total) * 100) }))
     .filter((r) => r.n > 0)
     .sort((a, b) => b.n - a.n);
   return `<div class="panel">
         <h3>質問の内訳</h3>
-        <p class="phint">「何のために聞いている？」をAIが分類（全${total}ターン）</p>
+        <p class="phint">「何のために聞いている？」をAIが分類（全${total}会話）</p>
         <div class="bars in-target">
           ${rows2
             .map(
@@ -295,6 +324,20 @@ function renderTimePanel() {
       </div>`;
 }
 
+// 直近7日と、その前の7日を比べて増減を言葉にする。
+// 最終日は集計時点までの途中データなので、その旨を添える。
+function renderTrendNote() {
+  if (chartDays.length < 14) return "";
+  const last7 = chartDays.slice(-7).reduce((s, d) => s + d.turns, 0);
+  const prev7 = chartDays.slice(-14, -7).reduce((s, d) => s + d.turns, 0);
+  if (!prev7) return "";
+  const diff = Math.round(((last7 - prev7) / prev7) * 100);
+  const dir = diff > 0 ? "増えて" : diff < 0 ? "減って" : "横ばいで";
+  return `<p class="insight">直近7日は <b>${last7}ターン</b>（その前の7日は ${prev7}ターン）。${
+    diff === 0 ? "ほぼ横ばいです。" : `<b>${Math.abs(diff)}% ${dir}います。</b>`
+  }最終日は集計時点までの途中経過です。</p>`;
+}
+
 function renderChart() {
   if (!chartDays.length) return `<p class="insight">データがまだありません。</p>`;
   const yMid = Math.round(yMax / 2);
@@ -313,7 +356,13 @@ function renderChart() {
       return `<g>${parts.join("")}</g>`;
     })
     .join("\n          ");
-  return `<div class="legend"><span class="lg"><i style="background:#1D62B3"></i>やりとり（ターン）</span><span class="lg"><i style="background:#B4652E"></i>会話</span></div>
+  const maPoints = chartDays
+    .map((d, i) => `${(plotLeft + i * slotW + slotW / 2).toFixed(1)},${yOfCount(d.ma).toFixed(1)}`)
+    .join(" ");
+  const maLine = chartDays.length > 1
+    ? `<polyline fill="none" stroke="#0C877D" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" points="${maPoints}"/>`
+    : "";
+  return `<div class="legend"><span class="lg"><i style="background:#1D62B3"></i>やりとり（ターン）</span><span class="lg"><i style="background:#B4652E"></i>会話</span><span class="lg"><i style="background:#0C877D"></i>7日移動平均（ターン）</span></div>
       <div class="chartbox">
         <svg viewBox="0 0 ${CHART_W} ${CHART_H}" style="min-width:${Math.max(520, chartDays.length * SLOT_MIN)}px" role="img" aria-label="日別の利用量。最も多い日は${peakDay ? `${peakDay.day}の${peakDay.turns}ターン` : "なし"}。">
           <g stroke="#CBD7E0" stroke-width="1">${gridLines}</g>
@@ -321,8 +370,10 @@ function renderChart() {
           <text class="axis" x="4" y="${(yOfCount(yMid) + 3).toFixed(1)}">${yMid}</text>
           <text class="axis" x="4" y="${plotBottom + 3}">0</text>
           ${groups}
+          ${maLine}
         </svg>
-      </div>`;
+      </div>
+      ${renderTrendNote()}`;
 }
 
 function renderThreads() {
@@ -518,7 +569,9 @@ const html = `<!doctype html>
   .kpi.accent{border-color:rgba(44,138,107,.5)}
   .kpi.accent .big{color:var(--good)}
 
-  .cols{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  /* minmax(0,1fr) にしないと、右パネルの日別カード（横スクロール前提で幅を持つ）が
+     min-content として効いてしまい、左の「質問の内訳」が潰れて文字が折り返す */
+  .cols{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px}
   .panel{background:var(--card);border:1px solid var(--rule);border-radius:8px;padding:clamp(18px,2.5vw,26px)}
   .panel h3{margin:0 0 4px;font-size:1.02rem;font-weight:700}
   .panel .phint{margin:0 0 20px;font-size:.85rem;color:var(--ink-3)}
@@ -535,7 +588,7 @@ const html = `<!doctype html>
   .insight b{color:var(--ink)}
 
   .daysplit{display:flex;gap:12px;margin-top:22px;padding-top:18px;border-top:1px dashed var(--rule);overflow-x:auto}
-  .day{flex:1 0 84px;background:var(--card-2);border:1px solid var(--rule);border-radius:6px;padding:12px 14px}
+  .day{flex:0 0 84px;background:var(--card-2);border:1px solid var(--rule);border-radius:6px;padding:12px 14px}
   .day .d{font-family:var(--mono);font-size:.72rem;color:var(--ink-3);letter-spacing:.04em;white-space:nowrap}
   .day .n{font-family:var(--mono);font-weight:600;font-size:1.5rem;color:var(--ink);line-height:1.2}
   .day .n .su{font-size:.72rem;font-weight:500;color:var(--ink-3)}
@@ -646,9 +699,9 @@ const html = `<!doctype html>
       <div class="kpi"><span class="lab">会話数</span><span class="big"><span class="num">${totalConvs}</span><span class="su">件</span></span><span class="cap">対話セッション</span></div>
       <div class="kpi"><span class="lab">質問ターン</span><span class="big"><span class="num">${totalTurns}</span><span class="su">回</span></span><span class="cap">子どもからの発話</span></div>
       <div class="kpi"><span class="lab">平均往復</span><span class="big"><span class="num">${avgTurns.toFixed(1)}</span><span class="su">ターン</span></span><span class="cap">1会話あたり</span></div>
-      <div class="kpi"><span class="lab">最長会話</span><span class="big"><span class="num">${longest ? longest.turns.length : 0}</span><span class="su">ターン</span></span><span class="cap">${longest ? esc(truncate(longest.firstQuestion, 12)) : "-"}</span></div>
-      <div class="kpi"><span class="lab">案内した教材</span><span class="big"><span class="num">${materialList.length}</span><span class="su">件</span></span><span class="cap">ise-rika DB へ誘導</span></div>
-      <div class="kpi accent"><span class="lab">エラー率</span><span class="big"><span class="num">${totalTurns ? Math.round((totalErrors / totalTurns) * 100) : 0}</span><span class="su">%</span></span><span class="cap">${totalErrors === 0 ? "全応答が正常" : `${totalErrors}件でエラー`}</span></div>
+      <div class="kpi"><span class="lab">単発で終了</span><span class="big"><span class="num">${Math.round(singleTurnRate)}</span><span class="su">%</span></span><span class="cap">1往復で終わった会話 ${singleTurnConvs}件</span></div>
+      <div class="kpi"><span class="lab">教材を案内</span><span class="big"><span class="num">${materialRate.toFixed(1)}</span><span class="su">%</span></span><span class="cap">教材リンクを示せた応答 ${turnsWithMaterial}件</span></div>
+      <div class="kpi"><span class="lab">応答エラー</span><span class="big"><span class="num">${totalErrors}</span><span class="su">件</span></span><span class="cap">アプリ例外として記録された数</span></div>
     </div>
   </section>
 
@@ -682,9 +735,10 @@ const html = `<!doctype html>
   <section>
     <div class="sec-head">
       <h2>いせちゃんが案内した教材</h2>
-      <p class="sub">対話中に提示された ise-rika データベースの教材（実リンク・言及の多い順）</p>
+      <p class="sub">対話中に提示された ise-rika データベースの教材（実リンク・言及の多い順）。これまでに <b>${materialList.length}件</b> の教材が案内されました。</p>
     </div>
     ${renderMaterials()}
+    <p class="insight">やりとり全${totalTurns}ターンのうち、教材リンクを提示できたのは <b>${turnsWithMaterial}ターン（${materialRate.toFixed(1)}%）</b>。会話単位では ${totalConvs}件中 <b>${convsWithMaterial}件（${Math.round((convsWithMaterial / (totalConvs || 1)) * 100)}%）</b> で教材にたどり着いています。${turnsNotFound > 0 ? `「探したが見つからなかった」と明示した応答は ${turnsNotFound}件でした。` : ""}</p>
   </section>
 
   <section>
@@ -694,7 +748,7 @@ const html = `<!doctype html>
     </div>
     <div class="propose">
       <span class="aitag"><i>い</i>iNexus AI からの提案</span>
-      <p class="plead">このボードは「いま、どう使われているか」を映しています。ここからユーザーの定着を伸ばす鍵は、<b>「質問に的確に答えられているか」を測り、改善につなげること</b>。ただし今のログでは、その“的確さ”と“定着”はまだ測れません（会話をまたいで同じ子を追う手がかりも、回答への評価もログに無いためです）。次の計測を少し足すだけで、見えるようになります。</p>
+      <p class="plead">${daySpan}日分・${totalConvs}会話がたまり、使われ方の輪郭が見えてきました。いちばん大きな発見は、<b>子どもたちは「教材を探しに」来ているというより、「学びの相談をしに」来ている</b>ということです。教材検索が主目的の会話は全体の ${Math.round((convClassCounts.find / (totalConvs || 1)) * 100)}% にとどまり、実際に教材リンクを提示できたやりとりも ${materialRate.toFixed(1)}% でした。これは失敗ではなく、<b>設計時の想定と実際の需要がずれている</b>ことを示すデータだと考えています。</p>
       <div class="pcards">
         <div class="pcard">
           <span class="pnum">01 ／ まず効く</span>
@@ -709,20 +763,22 @@ const html = `<!doctype html>
           <span class="metric">→ 解決率・改善すべき質問の特定</span>
         </div>
         <div class="pcard">
-          <span class="pnum">03 ／ その次に</span>
-          <h4>質問の意図を<br>自動でタグ付け</h4>
-          <p>「教材さがし／学習支援／きもち」などを自動分類すれば、<b>何が求められ、何に応えきれていないか</b>を継続把握できます。</p>
-          <span class="metric">→ 意図別の需要マップと解決率</span>
+          <span class="pnum">03 ／ 議論したい</span>
+          <h4>教材への導線を<br>相談の流れの中に置く</h4>
+          <p>「探して」と言われるのを待つと ${Math.round((convClassCounts.find / (totalConvs || 1)) * 100)}% にしか届きません。<b>学習相談の答えに教材を添える</b>形なら、残り ${100 - Math.round((convClassCounts.find / (totalConvs || 1)) * 100)}% にも教材が届きます。</p>
+          <span class="metric">→ 教材到達率（現在 ${materialRate.toFixed(1)}%）</span>
         </div>
       </div>
-      <p class="pnote"><b>実装は軽めです。</b> 多くはアプリのログ出力に項目を足すだけ。BigQuery 側はスキーマが自動で拡張されるので、追加工事はほぼ不要です。まずは <b>01・02</b> の2つが、定着への効き目が最大です。</p>
+      <p class="pnote"><b>01・02 の実装は軽めです。</b> アプリのログ出力に項目を足すだけで、BigQuery 側はスキーマが自動で拡張されます。<b>03 は方針の議論</b>が先で、「いせちゃんを教材データベースの案内役と位置づけるか、学習のパートナーと位置づけるか」という定義の問題です。実際の会話ログ（下段）を先生方にご覧いただき、ご意見をうかがえればと思います。</p>
     </div>
   </section>
 
   <footer class="foot">
     <p><b>データソース</b> ｜ <span class="mono">inexus-prod.ise_analytics.run_googleapis_com_stdout</span>（Cloud Run <span class="mono">ise-api</span> の stdout ログを Cloud Logging 経由で BigQuery に転送）</p>
-    <p><b>集計</b> ｜ ${esc(dataRangeLabel)}（JST）。「質問の内訳」はAIによる推定分類。</p>
+    <p><b>集計</b> ｜ ${esc(dataRangeLabel)}（JST）。「質問の内訳」は会話の起点ごとにAIが推定分類したもので、割合は会話数を母数にしています。</p>
     <p><b>「会話」の単位</b> ｜ 連続したやりとりのひとまとまり（1回の利用）を1会話と数えています。ログには利用者を識別する情報が無いため同じ人の再訪は区別できず、会話数は「利用された回数」のおおよその近似です。</p>
+    <p><b>「応答エラー」について</b> ｜ アプリが例外として記録した件数のみを数えています。応答が返っていても内容が質問と噛み合っていないケースはこの数に含まれないため、応答品質そのものを表す指標ではありません。</p>
+    <p><b>「教材を案内」について</b> ｜ 応答本文に ise-rika データベースへのリンクが1件以上含まれたやりとりの割合です。教材検索以外の質問（学習の相談や雑談など）も母数に含みます。</p>
     <p><b>更新について</b> ｜ このダッシュボードは日次で自動更新されます（BigQueryから直接再生成）。最終更新: ${esc(updated)}</p>
   </footer>
 

@@ -24,7 +24,8 @@ if (!RAW || !OUT) {
 function unwrap(obj) {
   if (typeof obj === "string") obj = JSON.parse(obj);
   if (obj && typeof obj === "object") {
-    if ("schema" in obj && "rows" in obj) return obj;
+    // BigQueryは該当行が0件のとき rows を省いて返すため、schema だけでも受け付ける
+    if ("schema" in obj) return { schema: obj.schema, rows: obj.rows || [] };
     if (obj.structuredContent) return unwrap(obj.structuredContent);
     if (Array.isArray(obj.content) && obj.content[0] && "text" in obj.content[0]) {
       return unwrap(obj.content[0].text);

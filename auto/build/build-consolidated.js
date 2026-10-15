@@ -90,8 +90,25 @@ function safeForScript(jsonStr) {
     ch === '<' ? '\\u003c' : '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0'));
 }
 
+// 管理画面へ移したページ（ルーティンは停止済み）。枠は消さずに「移動しました」の案内に差し替える
+// （枠ごと消すと、初めて見る人が「なぜ無くなったのか」と驚くため・2026-10-15 渡邉さん）
+const MOVED = JSON.parse(fs.readFileSync(path.join(__dirname, 'moved-pages.json'), 'utf8'));
+const escHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const movedNotice = (label, info) => `<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>${escHtml(label)}</title></head>
+<body style="margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f4f6fb;font-family:-apple-system,BlinkMacSystemFont,'Hiragino Sans','Noto Sans JP',sans-serif;color:#1a1d21">
+<div style="background:#fff;border:1px solid #e6e8eb;border-radius:16px;padding:28px 32px;max-width:560px;line-height:1.8">
+<div style="font-size:18px;font-weight:700;color:#1e46aa;margin-bottom:8px">${escHtml(label)} は管理画面へ移動しました（${escHtml(info.movedOn)}）</div>
+<div style="font-size:14px">${escHtml(info.where)}で、最新の数字を見られます。</div>
+<div style="margin-top:12px"><a href="${escHtml(info.url)}" target="_blank" rel="noopener" style="color:#1e46aa;font-weight:700">${escHtml(info.url)}</a></div>
+</div></body></html>`;
+
 const out = [];
 for (const d of DASHBOARDS) {
+  if (MOVED[d.file]) {
+    out.push({ id: d.id, label: `${d.label}（移動しました）`, icon: d.icon, html: movedNotice(d.label, MOVED[d.file]) });
+    console.log('[moved]', d.file, '->', MOVED[d.file].url);
+    continue;
+  }
   const p = path.join(ROOT, d.file);
   if (!fs.existsSync(p)) { console.warn('[skip] not found:', d.file); continue; }
   const html = fs.readFileSync(p, 'utf8');

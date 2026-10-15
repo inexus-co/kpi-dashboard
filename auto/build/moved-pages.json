@@ -1,0 +1,8 @@
+{
+  "_note": "管理画面へ移したページ（ルーティンは停止済み）。build-consolidated.js が all.html の枠を「移動しました」の案内に差し替え、mark-moved.js が各ページの入口に帯を出す。1枚移すたびに1行足す。",
+  "web-analytics.html": {
+    "movedOn": "2026-10-15",
+    "url": "https://admin.inexus-co.com/kids/web-analytics",
+    "where": "管理画面の「まなんでパズル」→「Web アクセス」"
+  }
+}

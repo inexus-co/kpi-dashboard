@@ -4,5 +4,15 @@
     "movedOn": "2026-10-15",
     "url": "https://admin.inexus-co.com/kids/web-analytics",
     "where": "管理画面の「まなんでパズル」→「Web アクセス」"
+  },
+  "kids-usage.html": {
+    "movedOn": "2026-10-16",
+    "url": "https://admin.inexus-co.com/kids/usage",
+    "where": "管理画面の「まなんでパズル」→「利用実績」"
+  },
+  "puzzle-feedback.html": {
+    "movedOn": "2026-10-16",
+    "url": "https://admin.inexus-co.com/kids/feedback",
+    "where": "管理画面の「まなんでパズル」→「フィードバックのまとめ」"
   }
 }

@@ -24,5 +24,15 @@
     "movedOn": "2026-10-19",
     "url": "https://admin.inexus-co.com/grade?tab=likes",
     "where": "管理画面の「採点くん」→「採点への評価」の上の集計"
+  },
+  "social-analytics.html": {
+    "movedOn": "2026-10-20",
+    "url": "https://admin.inexus-co.com/company/youtube",
+    "where": "管理画面の「会社全体」→「YouTube」"
+  },
+  "competitor-monitoring.html": {
+    "movedOn": "2026-10-20",
+    "url": "https://admin.inexus-co.com/company/competitors",
+    "where": "管理画面の「会社全体」→「競合アプリ」"
   }
 }

@@ -14,5 +14,15 @@
     "movedOn": "2026-10-16",
     "url": "https://admin.inexus-co.com/kids/feedback",
     "where": "管理画面の「まなんでパズル」→「フィードバックのまとめ」"
+  },
+  "index.html": {
+    "movedOn": "2026-10-19",
+    "url": "https://admin.inexus-co.com/grade",
+    "where": "管理画面の「採点くん」→「運営ダッシュボード」の「毎日の推移」（まなんでパズルの分は「まなんでパズル」→「利用実績」）"
+  },
+  "saiten-feedback.html": {
+    "movedOn": "2026-10-19",
+    "url": "https://admin.inexus-co.com/grade?tab=likes",
+    "where": "管理画面の「採点くん」→「採点への評価」の上の集計"
   }
 }

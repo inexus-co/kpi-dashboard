@@ -34,5 +34,10 @@
     "movedOn": "2026-10-20",
     "url": "https://admin.inexus-co.com/company/competitors",
     "where": "管理画面の「会社全体」→「競合アプリ」"
+  },
+  "all.html": {
+    "movedOn": "2026-10-20",
+    "url": "https://admin.inexus-co.com/",
+    "where": "管理画面のホーム（全社の数字と AI のまとめ）"
   }
 }

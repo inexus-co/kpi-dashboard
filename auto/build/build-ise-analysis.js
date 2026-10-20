@@ -200,6 +200,15 @@ function unitStack() {
 // ---- 5. 教材 ----
 const matItems = D.materials.map(m => ({ label: m.title, v: m.n, href: `https://ise-rika.cf.ocha.ac.jp/${m.id}` }));
 
+// ---- 総括（数字から組み立てる。毎日の更新で自動で変わる） ----
+const spanMonths = Math.max(1, Math.round(days.length / 30.4));
+const busiestMonth = monthKeys.reduce((a, b) => (months[b].turns > months[a].turns ? b : a));
+const summary = `記録を始めた${Number(D.since.slice(5, 7))}月${Number(D.since.slice(8))}日から約${spanMonths}か月で、ISEちゃんには <b>${fmt(totalTurns)} 件</b>の質問が寄せられ、${days.length}日のうち <b>${activeDays}日</b>で使われました。` +
+  `いちばん多く使われたのは${monthLabel(busiestMonth)}（${fmt(months[busiestMonth].turns)} 件）です。` +
+  `朝の授業の時間帯と、夕方の家庭での時間帯の両方で使われており、学校と家庭の両方で学びを支えています。` +
+  `理科の質問では${unitSorted[0].label}がいちばん多く（${unitSorted[0].pct}%）、回答の中で理科教材データベースの教材ページを <b>${fmt(totalLinks)} 回</b>案内しました。` +
+  `よく案内した教材は「${esc(D.materials[0].title)}」です。`;
+
 // ---- 表（グラフの数字を表でも） ----
 const monthTable = `<table><thead><tr><th>月</th><th>質問</th><th>会話</th></tr></thead><tbody>` +
   monthKeys.map(m => `<tr><td>${m}${m === partialMonth ? partialNote : ''}</td><td>${fmt(months[m].turns)}</td><td>${fmt(months[m].convs)}</td></tr>`).join('') +
@@ -240,6 +249,8 @@ svg{width:100%;height:auto;display:block;overflow:visible}
 .hval{text-align:right;font-variant-numeric:tabular-nums}.pct{color:var(--text-muted);font-size:12px;margin-left:6px}
 @media (max-width:640px){.hrow{grid-template-columns:1fr 4.5em}.htrack{grid-column:1/3;grid-row:2}}
 .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--text-secondary);margin:6px 0}.legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.summary{background:var(--surface-1);border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:12px;padding:14px 18px;margin-top:18px;font-size:15px}
+.summary h2{font-size:16px;margin:0 0 4px}.summary p{margin:0}
 .point{background:var(--accent-soft);border-radius:10px;padding:10px 14px;font-size:14px;margin:10px 0 0}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media (max-width:640px){.two{grid-template-columns:1fr}}
 details{margin-top:10px;font-size:13px;color:var(--text-secondary)}table{border-collapse:collapse;margin-top:6px}td,th{padding:3px 12px;border-bottom:1px solid var(--border);text-align:right}td:first-child,th:first-child{text-align:left}tr.total td{font-weight:700}
@@ -248,6 +259,8 @@ footer{margin-top:20px;font-size:12px;color:var(--text-muted)}
 </style></head><body><div class="wrap">
 <header><h1>ISEちゃん 利用レポート</h1>
 <p>お茶の水女子大学 理科教材データベースの AI アシスタント「ISEちゃん」の利用状況　｜　記録開始 ${D.since.replace(/-/g, '/')}　｜　更新 ${esc(stamp || '')}</p></header>
+
+<div class="summary"><h2>まとめ</h2><p>${summary}</p></div>
 
 <section>
 <h2>これだけ使われています</h2>

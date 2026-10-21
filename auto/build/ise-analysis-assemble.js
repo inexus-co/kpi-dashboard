@@ -85,9 +85,10 @@ async function main() {
     jst: String(r.jst), question: String(r.question || ''), answer: String(r.answer || ''),
     cat: PURPOSE[r.cat] || '', turns: num(r.turns) || 1,
   }));
-  // 見守り（前日0時以降の、命や安全にかかわる心配な内容）。ページには載せず、件数と時刻だけ出す
+  // 見守り（前日0時以降の、命や身の安全に差し迫った心配がある内容）。ページには載せず、件数と時刻だけ出す。
+  // こちらは運営の受託なので利用者には何も言わない。本当に大事なときだけ、渡邉さんがお茶大さんのチャンネルへ知らせる
   const watch = loadOpt('watch');
-  if (watch.length) console.warn(`WATCH ${watch.length} 件: ${watch.map(r => r.jst).join(', ')}`);
+  if (watch.length) console.warn(`WATCH ${watch.length} 件: ${watch.map(r => r.jst).join(', ')}（命や身の安全に差し迫った心配。お茶大さんへ知らせるかは渡邉さんが判断）`);
   else console.log('WATCH 0 件');
 
   const out = { since: daily[0].d, daily, hour, dow, purpose, unit, unitOther, materials, recent };

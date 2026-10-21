@@ -27,8 +27,11 @@ SELECT AI.CLASSIFY(jsonPayload.question, ['物理（電気・光・力・音・�
  FORMAT_DATETIME('%m', DATETIME(timestamp,'Asia/Tokyo')) m, COUNT(*) n
 FROM `inexus-prod.ise_analytics.run_googleapis_com_stdout` WHERE jsonPayload.event='ise_chat' GROUP BY cat, m;
 
--- [materials] 回答の中で案内した教材ページ（番号）の上位10。題名は公開サイトの
--- https://ise-rika.cf.ocha.ac.jp/wp-json/wp/v2/posts/<番号>?_fields=title から引く
+-- [materials] 回答の中で案内した教材ページ（番号）の上位10と、その題名。
+-- 題名は ISEちゃんの裏側のデータベース（Cloud SQL の ise_prod.ise_posts＝WordPress の記事更新で自動で取り込み直される写し）から
+-- BigQuery の接続 inexus-kids-db 経由で引く。題名が変わっても自動で追いかける。
 WITH l AS (SELECT REGEXP_EXTRACT_ALL(jsonPayload.answer, r'ise-rika\.cf\.ocha\.ac\.jp/(\d+)') ids
-  FROM `inexus-prod.ise_analytics.run_googleapis_com_stdout` WHERE jsonPayload.event='ise_chat')
-SELECT id, COUNT(*) n FROM l, UNNEST(ids) id GROUP BY id ORDER BY n DESC LIMIT 10;
+  FROM `inexus-prod.ise_analytics.run_googleapis_com_stdout` WHERE jsonPayload.event='ise_chat'),
+c AS (SELECT id, COUNT(*) n FROM l, UNNEST(ids) id GROUP BY id),
+p AS (SELECT CAST(id AS STRING) id, title FROM EXTERNAL_QUERY('981847209128.asia-northeast1.inexus-kids-db', 'SELECT id, title FROM ise_prod.ise_posts'))
+SELECT c.id, p.title, c.n FROM c LEFT JOIN p USING(id) ORDER BY c.n DESC LIMIT 10;

@@ -2,7 +2,7 @@
 /*
  * ise-analysis-assemble.js
  * ise-analysis.sql の各クエリの結果（BigQuery の行の配列を JSON で保存したもの）を集めて、
- * build-ise-analysis.js の入力 ise_analysis.json を作る。教材の題名は公開サイトから引く。
+ * build-ise-analysis.js の入力 ise_analysis.json を作る。教材の題名は [materials] の結果に入っている。
  *
  * 使い方:
  *   node ise-analysis-assemble.js <結果のフォルダ> <out ise_analysis.json>
@@ -13,20 +13,6 @@
 const fs = require('fs');
 const path = require('path');
 const [, , dir, outPath] = process.argv;
-if (dir === '--refresh-titles') {
-  // 手元用：指定した番号の題名を公開サイトから引いて ise-material-titles.json に足す
-  const p = path.join(__dirname, 'ise-material-titles.json');
-  const known = fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : {};
-  (async () => {
-    for (const id of (outPath || '').split(',').filter(Boolean)) {
-      const res = await fetch(`https://ise-rika.cf.ocha.ac.jp/wp-json/wp/v2/posts/${id}?_fields=title`);
-      if (res.ok) known[id] = (await res.json()).title.rendered.replace(/&#(\d+);/g, (_, c) => String.fromCharCode(c)).replace(/&amp;/g, '&');
-    }
-    fs.writeFileSync(p, JSON.stringify(known, null, 1));
-    console.log(`titles: ${Object.keys(known).length}`);
-  })();
-  return;
-}
 if (!dir || !outPath) {
   console.error('usage: node ise-analysis-assemble.js <dir> <out.json>');
   process.exit(1);
@@ -76,27 +62,15 @@ async function main() {
     else unitOther[mm(r.m)] = (unitOther[mm(r.m)] || 0) + num(r.n);
   }
 
-  // 題名は毎回、公開サイト（理科教材データベース）から引く＝題名が変わっても反映される。
-  // 引けなかったときだけ、リポジトリの控え（ise-material-titles.json）を使い、それも無ければ番号で出す。
-  // 2026-10-21：ルーティンの実行で題名が全部番号になった（原因は未確定・環境のネットワーク設定を確認中）。
-  // 引けなかったら必ず「TITLE-FETCH-FAILED」と出す（ルーティンの最後の報告で拾う）。
-  // 控えの作り直しは手元の Mac で node auto/build/ise-analysis-assemble.js --refresh-titles <番号,番号,...>
-  const titlesPath = path.join(__dirname, 'ise-material-titles.json');
-  const known = fs.existsSync(titlesPath) ? JSON.parse(fs.readFileSync(titlesPath, 'utf8')) : {};
+  // 題名は [materials] のクエリが ISEちゃんの裏側のデータベース（ise_prod.ise_posts）から一緒に引いてくる。
+  // 無いときだけ番号で出し、TITLE-MISSING と出す（ルーティンの最後の報告で拾う）。
   const materials = [];
-  let failed = 0;
   for (const r of load('materials')) {
     const id = String(r.id);
-    let title = null;
-    try {
-      const res = await fetch(`https://ise-rika.cf.ocha.ac.jp/wp-json/wp/v2/posts/${id}?_fields=title`, { signal: AbortSignal.timeout(10000) });
-      if (res.ok) title = (await res.json()).title.rendered.replace(/&#(\d+);/g, (_, c) => String.fromCharCode(c)).replace(/&amp;/g, '&');
-      else console.warn(`TITLE-FETCH-FAILED ${id}: HTTP ${res.status}`);
-    } catch (e) { console.warn(`TITLE-FETCH-FAILED ${id}: ${e.cause ? e.cause.code || e.cause.message : e.message}`); }
-    if (!title) { failed++; title = known[id] || `教材 No.${id}`; }
+    let title = r.title ? String(r.title) : '';
+    if (!title) { console.warn(`TITLE-MISSING ${id}（教材の写しに無い・番号で出した）`); title = `教材 No.${id}`; }
     materials.push({ id: num(id), title, n: num(r.n) });
   }
-  if (failed) console.warn(`TITLE-FETCH-FAILED 合計 ${failed} 件（控えか番号で出した）`);
 
   const out = { since: daily[0].d, daily, hour, dow, purpose, unit, unitOther, materials };
   fs.writeFileSync(outPath, JSON.stringify(out, null, 1));

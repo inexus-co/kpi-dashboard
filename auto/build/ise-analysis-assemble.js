@@ -13,6 +13,20 @@
 const fs = require('fs');
 const path = require('path');
 const [, , dir, outPath] = process.argv;
+if (dir === '--refresh-titles') {
+  // 手元用：指定した番号の題名を公開サイトから引いて ise-material-titles.json に足す
+  const p = path.join(__dirname, 'ise-material-titles.json');
+  const known = fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : {};
+  (async () => {
+    for (const id of (outPath || '').split(',').filter(Boolean)) {
+      const res = await fetch(`https://ise-rika.cf.ocha.ac.jp/wp-json/wp/v2/posts/${id}?_fields=title`);
+      if (res.ok) known[id] = (await res.json()).title.rendered.replace(/&#(\d+);/g, (_, c) => String.fromCharCode(c)).replace(/&amp;/g, '&');
+    }
+    fs.writeFileSync(p, JSON.stringify(known, null, 1));
+    console.log(`titles: ${Object.keys(known).length}`);
+  })();
+  return;
+}
 if (!dir || !outPath) {
   console.error('usage: node ise-analysis-assemble.js <dir> <out.json>');
   process.exit(1);
@@ -62,11 +76,17 @@ async function main() {
     else unitOther[mm(r.m)] = (unitOther[mm(r.m)] || 0) + num(r.n);
   }
 
+  // 題名は、まずリポジトリの一覧（ise-material-titles.json）から引く。ルーティンのクラウドからは
+  // ise-rika.cf.ocha.ac.jp に通信できないことがある（2026-10-21 実測：全部「教材 No.」になった）。
+  // 一覧に無い番号だけ公開サイトへ取りに行き、それも駄目なら番号で出す。一覧の作り直しは手元の Mac で
+  // node auto/build/ise-analysis-assemble.js --refresh-titles <番号,番号,...>
+  const titlesPath = path.join(__dirname, 'ise-material-titles.json');
+  const known = fs.existsSync(titlesPath) ? JSON.parse(fs.readFileSync(titlesPath, 'utf8')) : {};
   const materials = [];
   for (const r of load('materials')) {
     const id = String(r.id);
-    let title = `教材 No.${id}`;
-    try {
+    let title = known[id] || `教材 No.${id}`;
+    if (!known[id]) try {
       const res = await fetch(`https://ise-rika.cf.ocha.ac.jp/wp-json/wp/v2/posts/${id}?_fields=title`, { signal: AbortSignal.timeout(10000) });
       if (res.ok) title = (await res.json()).title.rendered.replace(/&#(\d+);/g, (_, c) => String.fromCharCode(c)).replace(/&amp;/g, '&');
     } catch (e) { console.warn(`題名を引けなかった（番号で出す）: ${id}`); }

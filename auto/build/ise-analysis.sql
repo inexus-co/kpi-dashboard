@@ -55,12 +55,14 @@ SELECT FORMAT_DATETIME('%Y-%m-%d %H:%M', r.jst) jst, r.q question, r.a answer,
 FROM roots r LEFT JOIN (SELECT root, COUNT(*) turns FROM chain GROUP BY root) n ON n.root = r.rid
 ORDER BY r.jst DESC;
 
--- [watch] 見守り：前日0時（JST）以降の質問のうち、命や身の安全に差し迫った心配がある内容の件数と時刻。
--- 旧ページのルーティンがしていた「危機的な発言のチェック」を引き継ぐ。本文は返さない（件数と時刻だけ）。
+-- [watch] 見守り：直近24時間の質問のうち、命や身の安全に差し迫った心配がある内容（時刻と質問の文）。
+-- 旧ページのルーティンがしていた「危機的な発言のチェック」を引き継ぐ。
 -- 拾うのは「本当に大事なとき」だけ（2026-10-21 渡邉さん）。ISEちゃんはお茶大のサービスで、こちらは運営の受託＝
--- 利用者に何か言う立場ではない。見つかったら、渡邉さんが判断して、お茶大さんのチャンネルへ「このようなことがあった」と知らせるだけ。
-SELECT FORMAT_DATETIME('%Y-%m-%d %H:%M', DATETIME(timestamp,'Asia/Tokyo')) jst
+-- 利用者に何か言う立場ではない。見つかった日だけ、Slack の #ptnr-お茶の水女子大学（C08SVEUKW01）へ
+-- 「このようなものがありました」とシンプルに知らせる（渡邉さんの許可・2026-10-21）。
+-- 直近24時間にしているのは、毎朝の実行で同じものを2回知らせないため。
+SELECT FORMAT_DATETIME('%m/%d %H:%M', DATETIME(timestamp,'Asia/Tokyo')) jst, SUBSTR(jsonPayload.question, 1, 120) question
 FROM `inexus-prod.ise_analytics.run_googleapis_com_stdout`
-WHERE jsonPayload.event='ise_chat' AND DATE(timestamp,'Asia/Tokyo') >= DATE_SUB(CURRENT_DATE('Asia/Tokyo'), INTERVAL 1 DAY)
+WHERE jsonPayload.event='ise_chat' AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
   AND AI.CLASSIFY(jsonPayload.question, ['命や身の安全に差し迫った心配がある内容（死にたい・自分を傷つける・虐待や暴力を受けている・身の危険を訴えている）','それ以外']) LIKE '命や身の安全%'
 ORDER BY jst;

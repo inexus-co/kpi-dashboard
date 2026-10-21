@@ -85,11 +85,11 @@ async function main() {
     jst: String(r.jst), question: String(r.question || ''), answer: String(r.answer || ''),
     cat: PURPOSE[r.cat] || '', turns: num(r.turns) || 1,
   }));
-  // 見守り（前日0時以降の、命や身の安全に差し迫った心配がある内容）。ページには載せず、件数と時刻だけ出す。
-  // こちらは運営の受託なので利用者には何も言わない。本当に大事なときだけ、渡邉さんがお茶大さんのチャンネルへ知らせる
-  const watch = loadOpt('watch');
-  if (watch.length) console.warn(`WATCH ${watch.length} 件: ${watch.map(r => r.jst).join(', ')}（命や身の安全に差し迫った心配。お茶大さんへ知らせるかは渡邉さんが判断）`);
-  else console.log('WATCH 0 件');
+  // 見守り（直近24時間の、命や身の安全に差し迫った心配がある内容）。ページには載せない。
+  // 見つかった日だけ、スキルの手順で #ptnr-お茶の水女子大学 へシンプルに知らせる（ise_watch.json を使う）
+  const watch = loadOpt('watch').map(r => ({ jst: String(r.jst), question: String(r.question || '') }));
+  fs.writeFileSync(path.join(path.dirname(outPath), 'ise_watch.json'), JSON.stringify(watch, null, 1));
+  console.log(`WATCH ${watch.length} 件${watch.length ? '（' + watch.map(r => r.jst).join(', ') + '）' : ''}`);
 
   const out = { since: daily[0].d, daily, hour, dow, purpose, unit, unitOther, materials, recent };
   fs.writeFileSync(outPath, JSON.stringify(out, null, 1));

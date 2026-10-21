@@ -76,22 +76,27 @@ async function main() {
     else unitOther[mm(r.m)] = (unitOther[mm(r.m)] || 0) + num(r.n);
   }
 
-  // 題名は、まずリポジトリの一覧（ise-material-titles.json）から引く。ルーティンのクラウドからは
-  // ise-rika.cf.ocha.ac.jp に通信できないことがある（2026-10-21 実測：全部「教材 No.」になった）。
-  // 一覧に無い番号だけ公開サイトへ取りに行き、それも駄目なら番号で出す。一覧の作り直しは手元の Mac で
-  // node auto/build/ise-analysis-assemble.js --refresh-titles <番号,番号,...>
+  // 題名は毎回、公開サイト（理科教材データベース）から引く＝題名が変わっても反映される。
+  // 引けなかったときだけ、リポジトリの控え（ise-material-titles.json）を使い、それも無ければ番号で出す。
+  // 2026-10-21：ルーティンの実行で題名が全部番号になった（原因は未確定・環境のネットワーク設定を確認中）。
+  // 引けなかったら必ず「TITLE-FETCH-FAILED」と出す（ルーティンの最後の報告で拾う）。
+  // 控えの作り直しは手元の Mac で node auto/build/ise-analysis-assemble.js --refresh-titles <番号,番号,...>
   const titlesPath = path.join(__dirname, 'ise-material-titles.json');
   const known = fs.existsSync(titlesPath) ? JSON.parse(fs.readFileSync(titlesPath, 'utf8')) : {};
   const materials = [];
+  let failed = 0;
   for (const r of load('materials')) {
     const id = String(r.id);
-    let title = known[id] || `教材 No.${id}`;
-    if (!known[id]) try {
+    let title = null;
+    try {
       const res = await fetch(`https://ise-rika.cf.ocha.ac.jp/wp-json/wp/v2/posts/${id}?_fields=title`, { signal: AbortSignal.timeout(10000) });
       if (res.ok) title = (await res.json()).title.rendered.replace(/&#(\d+);/g, (_, c) => String.fromCharCode(c)).replace(/&amp;/g, '&');
-    } catch (e) { console.warn(`題名を引けなかった（番号で出す）: ${id}`); }
+      else console.warn(`TITLE-FETCH-FAILED ${id}: HTTP ${res.status}`);
+    } catch (e) { console.warn(`TITLE-FETCH-FAILED ${id}: ${e.cause ? e.cause.code || e.cause.message : e.message}`); }
+    if (!title) { failed++; title = known[id] || `教材 No.${id}`; }
     materials.push({ id: num(id), title, n: num(r.n) });
   }
+  if (failed) console.warn(`TITLE-FETCH-FAILED 合計 ${failed} 件（控えか番号で出した）`);
 
   const out = { since: daily[0].d, daily, hour, dow, purpose, unit, unitOther, materials };
   fs.writeFileSync(outPath, JSON.stringify(out, null, 1));

@@ -7,7 +7,8 @@
  * 使い方:
  *   node ise-analysis-assemble.js <結果のフォルダ> <out ise_analysis.json>
  * フォルダに置くファイル（名前は ise-analysis.sql の [ ] と同じ）:
- *   daily.json  hour.json  dow.json  purpose.json  unit.json  materials.json
+ *   daily.json  hour.json  dow.json  purpose.json  unit.json  materials.json（必須）
+ *   recent.json  watch.json（無くてもよい）
  *   各ファイルは [{"列名": 値, ...}, ...] の配列（数値は文字列でもよい）。
  */
 const fs = require('fs');
@@ -23,6 +24,13 @@ const load = n => {
   const rows = JSON.parse(fs.readFileSync(p, 'utf8'));
   if (!Array.isArray(rows) || rows.length === 0) throw new Error(`結果が空: ${p}`);
   return rows;
+};
+// 無くてもよい結果（recent・watch）。ファイルが無い・空なら [] を返す
+const loadOpt = n => {
+  const p = path.join(dir, n + '.json');
+  if (!fs.existsSync(p)) return [];
+  const rows = JSON.parse(fs.readFileSync(p, 'utf8'));
+  return Array.isArray(rows) ? rows : [];
 };
 const num = v => Number(v);
 const mm = v => String(v).padStart(2, '0');
@@ -72,7 +80,17 @@ async function main() {
     materials.push({ id: num(id), title, n: num(r.n) });
   }
 
-  const out = { since: daily[0].d, daily, hour, dow, purpose, unit, unitOther, materials };
+  // 実際のやり取り（直近14日・最大30件）。本文はページに載せるためだけに使う
+  const recent = loadOpt('recent').map(r => ({
+    jst: String(r.jst), question: String(r.question || ''), answer: String(r.answer || ''),
+    cat: PURPOSE[r.cat] || '', turns: num(r.turns) || 1,
+  }));
+  // 見守り（前日0時以降の、命や安全にかかわる心配な内容）。ページには載せず、件数と時刻だけ出す
+  const watch = loadOpt('watch');
+  if (watch.length) console.warn(`WATCH ${watch.length} 件: ${watch.map(r => r.jst).join(', ')}`);
+  else console.log('WATCH 0 件');
+
+  const out = { since: daily[0].d, daily, hour, dow, purpose, unit, unitOther, materials, recent };
   fs.writeFileSync(outPath, JSON.stringify(out, null, 1));
   console.log(`wrote ${outPath}: days=${daily.length} last=${daily[daily.length - 1].d} purpose=${Object.keys(purpose).length} unit=${Object.keys(unit).length} materials=${materials.length}`);
 }

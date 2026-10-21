@@ -2,8 +2,8 @@
 /*
  * build-ise-analysis.js
  * ISEちゃん 利用レポート（ise-analysis.html の内側HTML）を作る。
- * 入力は BigQuery で集計した数字だけ（会話の本文は使わない・載せない）。
- * 集計クエリ＝auto/build/ise-analysis.sql。旧ページ ise-chat-usage.html（全件の一覧）とは別のページ。
+ * 入力は BigQuery で集計した数字と、直近2週間の会話（最大30件・ページ下の「実際のやり取り」）。
+ * 集計クエリ＝auto/build/ise-analysis.sql。旧ページ ise-chat-usage.html（全件の一覧）を統合した（2026-10-21）。
  *
  * 使い方:
  *   node build-ise-analysis.js <ise_analysis.json> <out-inner.html> "<更新日時の表示>"
@@ -209,6 +209,29 @@ const summary = `記録を始めた${Number(D.since.slice(5, 7))}月${Number(D.s
   `理科の質問では${unitSorted[0].label}がいちばん多く（${unitSorted[0].pct}%）、回答の中で理科教材データベースの教材ページを <b>${fmt(totalLinks)} 回</b>案内しました。` +
   `よく案内した教材は「${esc(D.materials[0].title)}」です。`;
 
+// ---- 実際のやり取り（直近14日・最大30件） ----
+function recentSection() {
+  const R = D.recent || [];
+  if (!R.length) return '';
+  const short = (t, n) => (t.length > n ? t.slice(0, n) + '…' : t);
+  const items = R.map(r => {
+    const label = r.cat ? r.cat.replace('いせちゃん', 'ISEちゃん') : '';
+    const longA = r.answer.length > 160;
+    return `<article class="conv">
+<div class="meta"><span>${esc(r.jst.replace(/-/g, '/'))}</span>${label ? `<span class="tag">${esc(label)}</span>` : ''}${r.turns > 1 ? `<span class="turns">この会話で ${fmt(r.turns)} 往復</span>` : ''}</div>
+<p class="q"><b>質問</b>${esc(r.question)}</p>
+${longA ? `<details class="a"><summary><b>ISEちゃん</b>${esc(short(r.answer, 160))}</summary><p>${esc(r.answer)}</p></details>`
+        : `<p class="a"><b>ISEちゃん</b>${esc(r.answer)}</p>`}
+</article>`;
+  }).join('');
+  return `<section>
+<h2>実際のやり取り（直近2週間）</h2>
+<p class="lead">ISEちゃんとの会話から、新しいものを最大30件載せています。各会話の最初の質問と、ISEちゃんの最初の回答です。長い回答は押すと全文が開きます。</p>
+<div class="convs">${items}</div>
+<p class="notes">それより前の会話の全文が必要な場合は、ご連絡いただければ表計算ソフトで開ける形でお送りします。</p>
+</section>`;
+}
+
 // ---- 表（グラフの数字を表でも） ----
 const monthTable = `<table><thead><tr><th>月</th><th>質問</th><th>会話</th></tr></thead><tbody>` +
   monthKeys.map(m => `<tr><td>${m}${m === partialMonth ? partialNote : ''}</td><td>${fmt(months[m].turns)}</td><td>${fmt(months[m].convs)}</td></tr>`).join('') +
@@ -254,6 +277,13 @@ svg{width:100%;height:auto;display:block;overflow:visible}
 .point{background:var(--accent-soft);border-radius:10px;padding:10px 14px;font-size:14px;margin:10px 0 0}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media (max-width:640px){.two{grid-template-columns:1fr}}
 details{margin-top:10px;font-size:13px;color:var(--text-secondary)}table{border-collapse:collapse;margin-top:6px}td,th{padding:3px 12px;border-bottom:1px solid var(--border);text-align:right}td:first-child,th:first-child{text-align:left}tr.total td{font-weight:700}
+.convs{display:flex;flex-direction:column;gap:10px}
+.conv{border:1px solid var(--border);border-radius:10px;padding:10px 14px;font-size:14px}
+.conv .meta{display:flex;flex-wrap:wrap;gap:8px;font-size:12px;color:var(--text-muted);margin-bottom:4px}
+.conv .tag{background:var(--accent-soft);color:var(--text-secondary);border-radius:6px;padding:0 6px}
+.conv p{margin:4px 0;white-space:pre-wrap;word-break:break-word}.conv b{display:inline-block;margin-right:8px;font-size:12px;color:var(--text-secondary)}
+.conv details summary{cursor:pointer;list-style:none;white-space:pre-wrap}.conv details summary::after{content:' 続きを読む';color:var(--accent);font-size:12px}
+.conv details[open] summary{display:none}
 .notes{font-size:13px;color:var(--text-secondary)}.notes li{margin:4px 0}
 footer{margin-top:20px;font-size:12px;color:var(--text-muted)}
 </style></head><body><div class="wrap">
@@ -314,13 +344,15 @@ ${unitStack()}
 ${hbars(matItems, { unit: '回', wide: true })}
 </section>
 
+${recentSection()}
+
 <section>
 <h2>このレポートについて</h2>
 <ul class="notes">
 <li>数字は、ISEちゃんの対話の記録（${D.since.replace(/-/g, '/')} から）を集計したものです。それより前の利用は記録していません。</li>
 <li>利用者を区別する情報（名前・端末など）は記録していないため、「何人が使ったか」は分かりません。「会話の数」がおおよその目安になります。</li>
 <li>「どんなことに使われているか」「分野」の分類は、AI が質問の文面から判断したもので、目安としてご覧ください。</li>
-<li>会話の全文が必要な場合は、ご連絡いただければ表計算ソフトで開ける形でお送りします。</li>
+<li>「実際のやり取り」は直近2週間の会話から最大30件です。それより前の会話の全文が必要な場合は、ご連絡いただければ表計算ソフトで開ける形でお送りします。</li>
 </ul>
 </section>
 <footer>株式会社インネクサス</footer>

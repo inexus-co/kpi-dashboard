@@ -35,3 +35,30 @@ WITH l AS (SELECT REGEXP_EXTRACT_ALL(jsonPayload.answer, r'ise-rika\.cf\.ocha\.a
 c AS (SELECT id, COUNT(*) n FROM l, UNNEST(ids) id GROUP BY id),
 p AS (SELECT CAST(id AS STRING) id, title FROM EXTERNAL_QUERY('981847209128.asia-northeast1.inexus-kids-db', 'SELECT id, title FROM ise_prod.ise_posts'))
 SELECT c.id, p.title, c.n FROM c LEFT JOIN p USING(id) ORDER BY c.n DESC LIMIT 10;
+
+-- [recent] 直近14日の会話（新しい順に最大30件）。会話の最初の質問と最初の回答、使い道の分類、
+-- その会話の中の往復の数。ページ下の「実際のやり取り」に載せる（お茶大には会話をそのまま見せてよい＝2026-07-01 渡邉さん）。
+-- 🚨 本文を扱うのはこのクエリだけ。結果のファイル（recent.json）はコミットしない（auto/cache の中だけ）。
+WITH RECURSIVE t AS (
+  SELECT DATETIME(timestamp,'Asia/Tokyo') jst, jsonPayload.question q, jsonPayload.answer a,
+    jsonPayload.response_id rid, NULLIF(jsonPayload.previous_response_id,'') prev
+  FROM `inexus-prod.ise_analytics.run_googleapis_com_stdout`
+  WHERE jsonPayload.event='ise_chat' AND DATE(timestamp,'Asia/Tokyo') >= DATE_SUB(CURRENT_DATE('Asia/Tokyo'), INTERVAL 14 DAY)),
+roots AS (SELECT * FROM t WHERE prev IS NULL ORDER BY jst DESC LIMIT 30),
+chain AS (
+  SELECT rid AS root, rid FROM roots
+  UNION ALL
+  SELECT c.root, t.rid FROM chain c JOIN t ON t.prev = c.rid)
+SELECT FORMAT_DATETIME('%Y-%m-%d %H:%M', r.jst) jst, r.q question, r.a answer,
+  AI.CLASSIFY(r.q, ['理科の質問・実験の相談','理科の教材や資料をさがす','他の教科の勉強（算数・国語・社会・英語など）','作文・レポート・発表の手伝い','あいさつ・ためし打ち・短い一言','いせちゃん自身についての質問','気持ち・悩み・生活の相談','遊び・ふざけ・その他の雑談']) cat,
+  IFNULL(n.turns, 1) turns
+FROM roots r LEFT JOIN (SELECT root, COUNT(*) turns FROM chain GROUP BY root) n ON n.root = r.rid
+ORDER BY r.jst DESC;
+
+-- [watch] 見守り：前日0時（JST）以降の質問のうち、命や安全にかかわる心配な内容の件数と時刻。
+-- 旧ページのルーティンがしていた「危機的な発言のチェック」を引き継ぐ。本文は返さない（件数と時刻だけ）。
+SELECT FORMAT_DATETIME('%Y-%m-%d %H:%M', DATETIME(timestamp,'Asia/Tokyo')) jst
+FROM `inexus-prod.ise_analytics.run_googleapis_com_stdout`
+WHERE jsonPayload.event='ise_chat' AND DATE(timestamp,'Asia/Tokyo') >= DATE_SUB(CURRENT_DATE('Asia/Tokyo'), INTERVAL 1 DAY)
+  AND AI.CLASSIFY(jsonPayload.question, ['命や安全にかかわる心配な内容（自傷・死にたい・いじめ・虐待・暴力・犯罪被害など）','それ以外']) LIKE '命や安全%'
+ORDER BY jst;

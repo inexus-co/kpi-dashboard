@@ -5,6 +5,8 @@
       "mcp__Google-Cloud-BigQuery__execute_sql_readonly",
       "Bash(mkdir -p auto/cache)",
       "Bash(node auto/build/*)",
+      "Edit(auto/cache/**)",
+      "Write(auto/cache/**)",
       "Bash(bash auto/build/*)",
       "Bash(cp /root/.claude/projects/*)",
       "Bash(python3 *)",

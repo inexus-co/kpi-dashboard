@@ -102,6 +102,8 @@ document.getElementById("f").addEventListener("submit",async e=>{
   try{
     const html=await unlock(document.getElementById("pw").value);
     document.open(); document.write(html); document.close();
+    // 復号のあと、URL の #… の場所へ移る（Slack の知らせから #watch へ直接来られるように・2026-10-24）
+    if(location.hash){ setTimeout(()=>{ const t=document.getElementById(decodeURIComponent(location.hash.slice(1))); if(t) t.scrollIntoView(); },0); }
   }catch(ex){
     err.textContent="パスワードが違います。"; btn.disabled=false; btn.textContent="表示する";
   }

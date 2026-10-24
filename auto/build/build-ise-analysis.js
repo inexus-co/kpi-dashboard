@@ -232,6 +232,32 @@ ${longA ? `<details class="a"><summary><b>ISEちゃん</b>${esc(short(r.answer, 
 </section>`;
 }
 
+// ---- 見守り（直近14日）。Slack の知らせのリンク（#watch）の行き先 ----
+function watchSection() {
+  const W = D.watchConv || [];
+  const items = W.map(c => {
+    let prev = 0;
+    const rows = c.turns.map(t => {
+      const gap = prev && t.turn > prev + 1 ? `<p class="gap">…（${fmt(t.turn - prev - 1)} 往復を省略）</p>` : '';
+      prev = t.turn;
+      return `${gap}<div class="wturn${t.flag ? ' flag' : ''}"><div class="meta"><span>${esc(t.jst)}</span><span class="turns">${fmt(t.turn)} 往復目</span>${t.flag ? '<span class="tag warn">心配な内容</span>' : ''}</div>
+<p class="q"><b>質問</b>${esc(t.question)}</p>
+<p class="a"><b>ISEちゃん</b>${esc(t.answer)}</p></div>`;
+    }).join('');
+    return `<article class="conv"><div class="meta"><span>会話の始まり ${esc(c.start.replace(/-/g, '/'))}</span><span class="turns">この会話で ${fmt(c.total)} 往復</span></div>${rows}</article>`;
+  }).join('');
+  return `<section id="watch">
+<h2>見守り（直近2週間）</h2>
+<p class="lead">ISEちゃんへの質問のうち、命や身の安全にかかわる心配な内容（死にたい・自分を傷つける・虐待や暴力・身の危険など）を AI が自動で拾ったものです。その質問の前2往復と後1往復も、ISEちゃんの返答と一緒に載せています。</p>
+${W.length ? `<div class="convs">${items}</div>` : '<p>直近2週間で、当てはまる質問はありませんでした。</p>'}
+<ul class="notes">
+<li>ISEちゃんの記録には、誰が送ったか（名前・ログインなど）は残っていません。弊社から利用者を特定することはできません。</li>
+<li>AI による自動の判定のため、冗談や物語の中の言葉を拾うこともあれば、見落とすこともあります。</li>
+<li>見つかった日は、朝の更新のときに Slack の #ptnr-お茶の水女子大学 へお知らせしています。</li>
+</ul>
+</section>`;
+}
+
 // ---- 表（グラフの数字を表でも） ----
 const monthTable = `<table><thead><tr><th>月</th><th>質問</th><th>会話</th></tr></thead><tbody>` +
   monthKeys.map(m => `<tr><td>${m}${m === partialMonth ? partialNote : ''}</td><td>${fmt(months[m].turns)}</td><td>${fmt(months[m].convs)}</td></tr>`).join('') +
@@ -284,6 +310,7 @@ details{margin-top:10px;font-size:13px;color:var(--text-secondary)}table{border-
 .conv p{margin:4px 0;white-space:pre-wrap;word-break:break-word}.conv b{display:inline-block;margin-right:8px;font-size:12px;color:var(--text-secondary)}
 .conv details summary{cursor:pointer;list-style:none;white-space:pre-wrap}.conv details summary::after{content:' 続きを読む';color:var(--accent);font-size:12px}
 .conv details[open] summary{display:none}
+.wturn{border-top:1px dashed var(--border, #ddd);padding-top:8px;margin-top:8px}.wturn.flag{background:color-mix(in srgb, #c0392b 8%, transparent);border-radius:6px;padding:8px}.tag.warn{background:#c0392b;color:#fff}.gap{font-size:12px;color:var(--text-muted);margin:8px 0}
 .notes{font-size:13px;color:var(--text-secondary)}.notes li{margin:4px 0}
 footer{margin-top:20px;font-size:12px;color:var(--text-muted)}
 </style></head><body><div class="wrap">
@@ -344,6 +371,7 @@ ${unitStack()}
 ${hbars(matItems, { unit: '回', wide: true })}
 </section>
 
+${watchSection()}
 ${recentSection()}
 
 <section>

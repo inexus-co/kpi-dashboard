@@ -66,3 +66,34 @@ FROM `inexus-prod.ise_analytics.run_googleapis_com_stdout`
 WHERE jsonPayload.event='ise_chat' AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
   AND AI.CLASSIFY(jsonPayload.question, ['命や身の安全に差し迫った心配がある内容（死にたい・自分を傷つける・虐待や暴力を受けている・身の危険を訴えている）','それ以外']) LIKE '命や身の安全%'
 ORDER BY jst;
+
+-- [watchconv] 見守りの会話（直近14日）。心配な質問があった会話ごとに、その質問と前2往復・後1往復を本文つきで出す。
+-- ページの「見守り」の節（#watch）に載せ、Slack の知らせからリンクで見に行けるようにする（2026-10-24 渡邉さん「通報だけでは何をすればいいか分からない・詳しく見に行ける場所を」）。
+-- 🚨 本文を扱うクエリ。結果（watchconv.json）は auto/cache の中だけに置き、コミットしない。
+-- 会話は response_id → previous_response_id でつながる。長い会話（90往復超）もあるので、さかのぼりは 300 段まで・最初の質問を探すために 45 日分を見る。
+WITH RECURSIVE t AS (
+  SELECT rid, ANY_VALUE(jst) jst, ANY_VALUE(prev) prev, ANY_VALUE(q) q, ANY_VALUE(a) a FROM (
+    SELECT DATETIME(timestamp,'Asia/Tokyo') jst, jsonPayload.response_id rid, NULLIF(jsonPayload.previous_response_id,'') prev,
+      jsonPayload.question q, jsonPayload.answer a
+    FROM `inexus-prod.ise_analytics.run_googleapis_com_stdout`
+    WHERE jsonPayload.event='ise_chat' AND DATE(timestamp,'Asia/Tokyo') >= DATE_SUB(CURRENT_DATE('Asia/Tokyo'), INTERVAL 45 DAY)) GROUP BY rid),
+flagged AS (
+  SELECT rid FROM t WHERE jst >= DATETIME_SUB(CURRENT_DATETIME('Asia/Tokyo'), INTERVAL 14 DAY)
+    AND AI.CLASSIFY(q, ['命や身の安全に差し迫った心配がある内容（死にたい・自分を傷つける・虐待や暴力を受けている・身の危険を訴えている）','それ以外']) LIKE '命や身の安全%'),
+up AS (
+  SELECT f.rid start, t.rid cur, t.prev, 0 n FROM flagged f JOIN t USING (rid)
+  UNION ALL
+  SELECT u.start, t.rid, t.prev, u.n+1 FROM up u JOIN t ON t.rid = u.prev WHERE u.n < 300),
+roots AS (SELECT DISTINCT ARRAY_AGG(cur ORDER BY n DESC LIMIT 1)[OFFSET(0)] root FROM up GROUP BY start),
+down AS (
+  SELECT root, root rid, 0 depth FROM roots
+  UNION ALL
+  SELECT d.root, t.rid, d.depth+1 FROM down d JOIN t ON t.prev = d.rid WHERE d.depth < 300),
+turns AS (SELECT d.root, d.depth, d.rid, f.rid IS NOT NULL flag FROM down d LEFT JOIN flagged f USING (rid)),
+win AS (SELECT DISTINCT x.root, x.depth, x.rid, x.flag FROM turns x JOIN turns y ON x.root = y.root AND y.flag AND x.depth BETWEEN y.depth - 2 AND y.depth + 1),
+conv AS (SELECT root, COUNT(*) total FROM turns GROUP BY root)
+SELECT FORMAT_DATETIME('%Y-%m-%d %H:%M', r.jst) conv_start, c.total, w.depth + 1 turn,
+  FORMAT_DATETIME('%m/%d %H:%M', t.jst) jst, t.q question, t.a answer, w.flag
+FROM win w JOIN t USING (rid) JOIN conv c USING (root) JOIN t r ON r.rid = w.root
+ORDER BY conv_start DESC, turn;
+

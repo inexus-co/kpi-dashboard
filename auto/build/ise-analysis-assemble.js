@@ -8,7 +8,7 @@
  *   node ise-analysis-assemble.js <結果のフォルダ> <out ise_analysis.json>
  * フォルダに置くファイル（名前は ise-analysis.sql の [ ] と同じ）:
  *   daily.json  hour.json  dow.json  purpose.json  unit.json  materials.json（必須）
- *   recent.json  watch.json（無くてもよい）
+ *   recent.json  watch.json  watchconv.json（無くてもよい）
  *   各ファイルは [{"列名": 値, ...}, ...] の配列（数値は文字列でもよい）。
  */
 const fs = require('fs');
@@ -91,7 +91,20 @@ async function main() {
   fs.writeFileSync(path.join(path.dirname(outPath), 'ise_watch.json'), JSON.stringify(watch, null, 1));
   console.log(`WATCH ${watch.length} 件${watch.length ? '（' + watch.map(r => r.jst).join(', ') + '）' : ''}`);
 
-  const out = { since: daily[0].d, daily, hour, dow, purpose, unit, unitOther, materials, recent };
+  // 見守りの会話（直近14日）。心配な質問の前後をページの「見守り」の節（#watch）に載せる
+  const wc = {};
+  for (const r of loadOpt('watchconv')) {
+    const key = String(r.conv_start);
+    (wc[key] = wc[key] || { start: key, total: num(r.total), turns: [] }).turns.push({
+      turn: num(r.turn), jst: String(r.jst), question: String(r.question || ''), answer: String(r.answer || ''),
+      flag: r.flag === true || r.flag === 'true',
+    });
+  }
+  const watchConv = Object.values(wc).sort((a, b) => (a.start < b.start ? 1 : -1));
+  watchConv.forEach(c => c.turns.sort((a, b) => a.turn - b.turn));
+  console.log(`WATCHCONV ${watchConv.length} 会話`);
+
+  const out = { since: daily[0].d, daily, hour, dow, purpose, unit, unitOther, materials, recent, watchConv };
   fs.writeFileSync(outPath, JSON.stringify(out, null, 1));
   console.log(`wrote ${outPath}: days=${daily.length} last=${daily[daily.length - 1].d} purpose=${Object.keys(purpose).length} unit=${Object.keys(unit).length} materials=${materials.length}`);
 }

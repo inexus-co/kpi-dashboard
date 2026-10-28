@@ -61,10 +61,13 @@ ORDER BY r.jst DESC;
 -- 利用者に何か言う立場ではない。見つかった日だけ、Slack の #ptnr-お茶の水女子大学（C08SVEUKW01）へ
 -- 「このようなものがありました」とシンプルに知らせる（渡邉さんの許可・2026-10-21）。
 -- 直近24時間にしているのは、毎朝の実行で同じものを2回知らせないため。
+-- 台風・地震などの災害や、けが・病気のときの行動を聞く知識の質問は外す（10/25「今台風がおきています。どう行動したらいい？」を拾った・2026-10-29 渡邉さん了承）。
+-- 外す判定は「本人の気持ち・つらさの訴え」と並べて聞く＝2択だと「大人の人いない」まで知識の質問に寄った（10/29 実測）。
 SELECT FORMAT_DATETIME('%m/%d %H:%M', DATETIME(timestamp,'Asia/Tokyo')) jst, SUBSTR(jsonPayload.question, 1, 120) question
 FROM `inexus-prod.ise_analytics.run_googleapis_com_stdout`
 WHERE jsonPayload.event='ise_chat' AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
   AND AI.CLASSIFY(jsonPayload.question, ['命や身の安全に差し迫った心配がある内容（死にたい・自分を傷つける・虐待や暴力を受けている・身の危険を訴えている）','それ以外']) LIKE '命や身の安全%'
+  AND NOT AI.CLASSIFY(jsonPayload.question, ['台風・地震・大雨などの災害や、けが・病気のときに、どう行動すればよいかを知りたいという知識の質問','本人の気持ち・つらさ・ひとりで困っていることの訴え','それ以外']) LIKE '台風%'
 ORDER BY jst;
 
 -- [watchconv] 見守りの会話（直近14日）。心配な質問があった会話ごとに、その質問と前2往復・後1往復を本文つきで出す。
@@ -79,7 +82,8 @@ WITH RECURSIVE t AS (
     WHERE jsonPayload.event='ise_chat' AND DATE(timestamp,'Asia/Tokyo') >= DATE_SUB(CURRENT_DATE('Asia/Tokyo'), INTERVAL 45 DAY)) GROUP BY rid),
 flagged AS (
   SELECT rid FROM t WHERE jst >= DATETIME_SUB(CURRENT_DATETIME('Asia/Tokyo'), INTERVAL 14 DAY)
-    AND AI.CLASSIFY(q, ['命や身の安全に差し迫った心配がある内容（死にたい・自分を傷つける・虐待や暴力を受けている・身の危険を訴えている）','それ以外']) LIKE '命や身の安全%'),
+    AND AI.CLASSIFY(q, ['命や身の安全に差し迫った心配がある内容（死にたい・自分を傷つける・虐待や暴力を受けている・身の危険を訴えている）','それ以外']) LIKE '命や身の安全%'
+    AND NOT AI.CLASSIFY(q, ['台風・地震・大雨などの災害や、けが・病気のときに、どう行動すればよいかを知りたいという知識の質問','本人の気持ち・つらさ・ひとりで困っていることの訴え','それ以外']) LIKE '台風%'),
 up AS (
   SELECT f.rid start, t.rid cur, t.prev, 0 n FROM flagged f JOIN t USING (rid)
   UNION ALL

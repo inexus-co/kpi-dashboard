@@ -95,7 +95,7 @@ async function main() {
   const wc = {};
   for (const r of loadOpt('watchconv')) {
     const key = String(r.conv_start);
-    (wc[key] = wc[key] || { start: key, total: num(r.total), turns: [] }).turns.push({
+    (wc[key] = wc[key] || { start: key, total: num(r.total), story: r.story === true || r.story === 'true', turns: [] }).turns.push({
       turn: num(r.turn), jst: String(r.jst), question: String(r.question || ''), answer: String(r.answer || ''),
       flag: r.flag === true || r.flag === 'true',
     });

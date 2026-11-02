@@ -63,11 +63,34 @@ ORDER BY r.jst DESC;
 -- 直近24時間にしているのは、毎朝の実行で同じものを2回知らせないため。
 -- 台風・地震などの災害や、けが・病気のときの行動を聞く知識の質問は外す（10/25「今台風がおきています。どう行動したらいい？」を拾った・2026-10-29 渡邉さん了承）。
 -- 外す判定は「本人の気持ち・つらさの訴え」と並べて聞く＝2択だと「大人の人いない」まで知識の質問に寄った（10/29 実測）。
-SELECT FORMAT_DATETIME('%m/%d %H:%M', DATETIME(timestamp,'Asia/Tokyo')) jst, SUBSTR(jsonPayload.question, 1, 120) question
-FROM `inexus-prod.ise_analytics.run_googleapis_com_stdout`
-WHERE jsonPayload.event='ise_chat' AND timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
-  AND AI.CLASSIFY(jsonPayload.question, ['命や身の安全に差し迫った心配がある内容（死にたい・自分を傷つける・虐待や暴力を受けている・身の危険を訴えている）','それ以外']) LIKE '命や身の安全%'
-  AND NOT AI.CLASSIFY(jsonPayload.question, ['台風・地震・大雨などの災害や、けが・病気のときに、どう行動すればよいかを知りたいという知識の質問','本人の気持ち・つらさ・ひとりで困っていることの訴え','それ以外']) LIKE '台風%'
+-- 2026-11-02〜 会話ごとの2段目の判定：会話の始まりからの質問をまとめて読ませ、会話全体が物語・ごっこ遊び・ゲームで、
+-- 本人の現実の訴えが混じっていないものは、Slack へ知らせない（11/01 の「堕天使」「回復魔法」の会話を12件知らせた・渡邉さん了承）。
+-- 外したものもページの「見守り」の節には印を付けて残す（[watchconv] の story）。迷うもの・本人の訴えが混じるものは知らせる側に倒す。
+-- 1問ずつ・直前2問だけで読ませる形は、会話の出だしの問いを「本人の訴え」と読んだ（11/02 実測）＝会話全体で1回判定する。
+WITH RECURSIVE t AS (
+  SELECT rid, ANY_VALUE(jst) jst, ANY_VALUE(prev) prev, ANY_VALUE(q) q FROM (
+    SELECT DATETIME(timestamp,'Asia/Tokyo') jst, jsonPayload.response_id rid, NULLIF(jsonPayload.previous_response_id,'') prev, jsonPayload.question q
+    FROM `inexus-prod.ise_analytics.run_googleapis_com_stdout`
+    WHERE jsonPayload.event='ise_chat' AND DATE(timestamp,'Asia/Tokyo') >= DATE_SUB(CURRENT_DATE('Asia/Tokyo'), INTERVAL 45 DAY)) GROUP BY rid),
+flagged AS (
+  SELECT rid FROM t WHERE jst >= DATETIME_SUB(CURRENT_DATETIME('Asia/Tokyo'), INTERVAL 24 HOUR)
+    AND AI.CLASSIFY(q, ['命や身の安全に差し迫った心配がある内容（死にたい・自分を傷つける・虐待や暴力を受けている・身の危険を訴えている）','それ以外']) LIKE '命や身の安全%'
+    AND NOT AI.CLASSIFY(q, ['台風・地震・大雨などの災害や、けが・病気のときに、どう行動すればよいかを知りたいという知識の質問','本人の気持ち・つらさ・ひとりで困っていることの訴え','それ以外']) LIKE '台風%'),
+up AS (
+  SELECT f.rid start, t.rid cur, t.prev, 0 n FROM flagged f JOIN t USING (rid)
+  UNION ALL
+  SELECT u.start, t.rid, t.prev, u.n+1 FROM up u JOIN t ON t.rid = u.prev WHERE u.n < 300),
+roots AS (SELECT start rid, ARRAY_AGG(cur ORDER BY n DESC LIMIT 1)[OFFSET(0)] root FROM up GROUP BY start),
+down AS (
+  SELECT root, root rid, 0 depth FROM (SELECT DISTINCT root FROM roots)
+  UNION ALL
+  SELECT d.root, t.rid, d.depth+1 FROM down d JOIN t ON t.prev = d.rid WHERE d.depth < 300),
+story AS (
+  SELECT root, AI.CLASSIFY(qs, ['会話全体が、物語・ごっこ遊び・ゲーム・創作の中の話で、書いた本人が現実のつらさや危険を訴えている部分は無い','書いた本人が、現実に、つらい・危ない・助けがほしいと訴えている部分がある','どちらとも判断できない']) LIKE '会話全体が%' story FROM (
+    SELECT d.root, STRING_AGG(SUBSTR(t.q, 1, 100), '\n' ORDER BY d.depth LIMIT 120) qs FROM down d JOIN t USING (rid) GROUP BY d.root))
+SELECT FORMAT_DATETIME('%m/%d %H:%M', t.jst) jst, SUBSTR(t.q, 1, 120) question
+FROM flagged f JOIN t USING (rid) JOIN roots r USING (rid) LEFT JOIN story s ON s.root = r.root
+WHERE NOT IFNULL(s.story, FALSE)
 ORDER BY jst;
 
 -- [watchconv] 見守りの会話（直近14日）。心配な質問があった会話ごとに、その質問と前2往復・後1往復を本文つきで出す。
@@ -95,9 +118,13 @@ down AS (
   SELECT d.root, t.rid, d.depth+1 FROM down d JOIN t ON t.prev = d.rid WHERE d.depth < 300),
 turns AS (SELECT d.root, d.depth, d.rid, f.rid IS NOT NULL flag FROM down d LEFT JOIN flagged f USING (rid)),
 win AS (SELECT DISTINCT x.root, x.depth, x.rid, x.flag FROM turns x JOIN turns y ON x.root = y.root AND y.flag AND x.depth BETWEEN y.depth - 2 AND y.depth + 1),
-conv AS (SELECT root, COUNT(*) total FROM turns GROUP BY root)
+conv AS (SELECT root, COUNT(*) total FROM turns GROUP BY root),
+-- 会話全体が物語・ごっこ遊びか（[watch] と同じ判定。true の会話は Slack へ知らせず、ページに印を付けて載せる）
+story AS (
+  SELECT root, AI.CLASSIFY(qs, ['会話全体が、物語・ごっこ遊び・ゲーム・創作の中の話で、書いた本人が現実のつらさや危険を訴えている部分は無い','書いた本人が、現実に、つらい・危ない・助けがほしいと訴えている部分がある','どちらとも判断できない']) LIKE '会話全体が%' story FROM (
+    SELECT d.root, STRING_AGG(SUBSTR(t.q, 1, 100), '\n' ORDER BY d.depth LIMIT 120) qs FROM down d JOIN t USING (rid) GROUP BY d.root))
 SELECT FORMAT_DATETIME('%Y-%m-%d %H:%M', r.jst) conv_start, c.total, w.depth + 1 turn,
-  FORMAT_DATETIME('%m/%d %H:%M', t.jst) jst, t.q question, t.a answer, w.flag
-FROM win w JOIN t USING (rid) JOIN conv c USING (root) JOIN t r ON r.rid = w.root
+  FORMAT_DATETIME('%m/%d %H:%M', t.jst) jst, t.q question, t.a answer, w.flag, IFNULL(s.story, FALSE) story
+FROM win w JOIN t USING (rid) JOIN conv c USING (root) JOIN t r ON r.rid = w.root LEFT JOIN story s ON s.root = w.root
 ORDER BY conv_start DESC, turn;
 

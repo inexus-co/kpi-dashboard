@@ -244,7 +244,7 @@ function watchSection() {
 <p class="q"><b>質問</b>${esc(t.question)}</p>
 <p class="a"><b>ISEちゃん</b>${esc(t.answer)}</p></div>`;
     }).join('');
-    return `<article class="conv"><div class="meta"><span>会話の始まり ${esc(c.start.replace(/-/g, '/'))}</span><span class="turns">この会話で ${fmt(c.total)} 往復</span></div>${rows}</article>`;
+    return `<article class="conv"><div class="meta"><span>会話の始まり ${esc(c.start.replace(/-/g, '/'))}</span><span class="turns">この会話で ${fmt(c.total)} 往復</span>${c.story ? '<span class="tag">物語・ごっこ遊びのようです（Slack へはお知らせしていません）</span>' : ''}</div>${rows}</article>`;
   }).join('');
   return `<section id="watch">
 <h2>見守り（直近2週間）</h2>
@@ -253,7 +253,7 @@ ${W.length ? `<div class="convs">${items}</div>` : '<p>直近2週間で、当て
 <ul class="notes">
 <li>ISEちゃんの記録に、名前やログインの情報はありません。サーバーの通信の記録（接続元の IP アドレスと時刻）は約30日残り、その後は消えます。</li>
 <li>AI による自動の判定のため、冗談や物語の中の言葉を拾うこともあれば、見落とすこともあります。</li>
-<li>見つかった日は、朝の更新のときに Slack の #ptnr-お茶の水女子大学 へお知らせしています。</li>
+<li>見つかった日は、朝の更新のときに Slack の #ptnr-お茶の水女子大学 へお知らせしています。ただし、会話全体を AI が読んで、物語・ごっこ遊び・ゲームの中の言葉だけと判断したものはお知らせせず、ここに印を付けて載せています。</li>
 </ul>
 </section>`;
 }

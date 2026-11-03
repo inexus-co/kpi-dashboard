@@ -9,9 +9,10 @@ SELECT FORMAT_DATE('%Y-%m-%d', DATE(timestamp,'Asia/Tokyo')) d, COUNT(*) turns,
  COUNTIF(REGEXP_CONTAINS(jsonPayload.answer, r'ise-rika\.cf\.ocha\.ac\.jp/\d+')) links
 FROM `inexus-prod.ise_analytics.run_googleapis_com_stdout` WHERE jsonPayload.event='ise_chat' GROUP BY d ORDER BY d;
 
--- [hour] [dow] 時間帯（0〜23）と曜日（1=日〜7=土）ごとの質問数
+-- [hour] 時間帯（0〜23）ごとの質問数
 SELECT EXTRACT(HOUR FROM DATETIME(timestamp,'Asia/Tokyo')) h, COUNT(*) n
 FROM `inexus-prod.ise_analytics.run_googleapis_com_stdout` WHERE jsonPayload.event='ise_chat' GROUP BY h;
+-- [dow] 曜日（1=日〜7=土）ごとの質問数
 SELECT EXTRACT(DAYOFWEEK FROM DATETIME(timestamp,'Asia/Tokyo')) w, COUNT(*) n
 FROM `inexus-prod.ise_analytics.run_googleapis_com_stdout` WHERE jsonPayload.event='ise_chat' GROUP BY w;
 

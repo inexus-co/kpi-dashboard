@@ -6,7 +6,7 @@
 #
 # 動かす場所の前提（Cloud Run のジョブ・サービスアカウント ise-report-reader として動く）:
 #   - BigQuery・Secret Manager はメタデータサーバーのトークンで読む（鍵のファイルは要らない）
-#   - 環境変数（Secret Manager から差し込む）: DASHBOARD_PASSWORD・ISE_EXTERNAL_PASSWORD・INEXUS_NOTIFY_BOT_TOKEN・GITHUB_PAT
+#   - 環境変数（Secret Manager から差し込む）: DASHBOARD_PASSWORD・ISE_EXTERNAL_PASSWORD・INEXUS_NOTIFY_BOT_TOKEN。GitHub への push は kpi-dashboard だけに書けるデプロイキー（ise-deploy-key）
 #   - 失敗したら #op-alert へ bot で1行知らせて、終了コード 1 で終わる（Cloud Run のジョブの記録にも残る）
 #   - ISE_DRY_RUN=1 のときは、公開（push）と Slack への知らせをしない（切り替え前の試し・2026-11-03）
 # 🚨 会話の本文は auto/cache の中だけ。画面（ログ）に出すのは件数・トークン・料金だけ。

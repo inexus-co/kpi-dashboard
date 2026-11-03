@@ -1,6 +1,7 @@
 -- ISEちゃん 利用レポート（ise-analysis.html）の集計クエリ。BigQuery（inexus-prod）で実行する。
 -- 🚨 会話の本文（question / answer）は外へ出さない。出すのは件数と教材ページの番号だけ。
--- 分類（AI.CLASSIFY）は BigQuery の中で行い、件数だけを受け取る。
+-- 分類は ise-classify.js が Claude で新しい質問だけ1回行い、結果を ise_report.question_labels・conv_story に残す（2026-11-03〜）。
+-- ここはその結果を読んで数えるだけ（AI は呼ばない）。それまでは AI.CLASSIFY（Gemini）で毎朝全期間を分類し直していた。
 -- 結果は build-ise-analysis.js の入力（ise_analysis.json）の各キーに入れる。
 
 -- [daily] 日ごとの質問数・会話数・教材ページを案内した回答の数
@@ -17,16 +18,12 @@ SELECT EXTRACT(DAYOFWEEK FROM DATETIME(timestamp,'Asia/Tokyo')) w, COUNT(*) n
 FROM `inexus-prod.ise_analytics.run_googleapis_com_stdout` WHERE jsonPayload.event='ise_chat' GROUP BY w;
 
 -- [purpose] 会話の最初の質問を8つに分けた件数（月別）
-SELECT AI.CLASSIFY(jsonPayload.question, ['理科の質問・実験の相談','理科の教材や資料をさがす','他の教科の勉強（算数・国語・社会・英語など）','作文・レポート・発表の手伝い','あいさつ・ためし打ち・短い一言','いせちゃん自身についての質問','気持ち・悩み・生活の相談','遊び・ふざけ・その他の雑談']) cat,
- FORMAT_DATETIME('%m', DATETIME(timestamp,'Asia/Tokyo')) m, COUNT(*) n
-FROM `inexus-prod.ise_analytics.run_googleapis_com_stdout`
-WHERE jsonPayload.event='ise_chat' AND (jsonPayload.previous_response_id IS NULL OR jsonPayload.previous_response_id='')
-GROUP BY cat, m;
+SELECT purpose cat, FORMAT_DATETIME('%m', DATETIME(ts,'Asia/Tokyo')) m, COUNT(*) n
+FROM `inexus-prod.ise_report.question_labels` WHERE is_start AND purpose IS NOT NULL GROUP BY cat, m;
 
 -- [unit] すべての質問を理科の4分野＋理科以外に分けた件数（月別）
-SELECT AI.CLASSIFY(jsonPayload.question, ['物理（電気・光・力・音・磁石）','化学（物質・水溶液・燃焼・状態変化）','生物（植物・動物・人体）','地学（天気・地層・天体）','理科以外・雑談']) cat,
- FORMAT_DATETIME('%m', DATETIME(timestamp,'Asia/Tokyo')) m, COUNT(*) n
-FROM `inexus-prod.ise_analytics.run_googleapis_com_stdout` WHERE jsonPayload.event='ise_chat' GROUP BY cat, m;
+SELECT unit cat, FORMAT_DATETIME('%m', DATETIME(ts,'Asia/Tokyo')) m, COUNT(*) n
+FROM `inexus-prod.ise_report.question_labels` WHERE unit IS NOT NULL GROUP BY cat, m;
 
 -- [materials] 回答の中で案内した教材ページ（番号）の上位10と、その題名。
 -- 題名は ISEちゃんの裏側のデータベース（Cloud SQL の ise_prod.ise_posts＝WordPress の記事更新で自動で取り込み直される写し）から
@@ -51,9 +48,10 @@ chain AS (
   UNION ALL
   SELECT c.root, t.rid FROM chain c JOIN t ON t.prev = c.rid)
 SELECT FORMAT_DATETIME('%Y-%m-%d %H:%M', r.jst) jst, r.q question, r.a answer,
-  AI.CLASSIFY(r.q, ['理科の質問・実験の相談','理科の教材や資料をさがす','他の教科の勉強（算数・国語・社会・英語など）','作文・レポート・発表の手伝い','あいさつ・ためし打ち・短い一言','いせちゃん自身についての質問','気持ち・悩み・生活の相談','遊び・ふざけ・その他の雑談']) cat,
+  l.purpose cat,
   IFNULL(n.turns, 1) turns
 FROM roots r LEFT JOIN (SELECT root, COUNT(*) turns FROM chain GROUP BY root) n ON n.root = r.rid
+  LEFT JOIN `inexus-prod.ise_report.question_labels` l ON l.rid = r.rid
 ORDER BY r.jst DESC;
 
 -- [watch] 見守り：直近24時間の質問のうち、命や身の安全に差し迫った心配がある内容（時刻と質問の文）。
@@ -74,9 +72,8 @@ WITH RECURSIVE t AS (
     FROM `inexus-prod.ise_analytics.run_googleapis_com_stdout`
     WHERE jsonPayload.event='ise_chat' AND DATE(timestamp,'Asia/Tokyo') >= DATE_SUB(CURRENT_DATE('Asia/Tokyo'), INTERVAL 45 DAY)) GROUP BY rid),
 flagged AS (
-  SELECT rid FROM t WHERE jst >= DATETIME_SUB(CURRENT_DATETIME('Asia/Tokyo'), INTERVAL 24 HOUR)
-    AND AI.CLASSIFY(q, ['命や身の安全に差し迫った心配がある内容（死にたい・自分を傷つける・虐待や暴力を受けている・身の危険を訴えている）','それ以外']) LIKE '命や身の安全%'
-    AND NOT AI.CLASSIFY(q, ['台風・地震・大雨などの災害や、けが・病気のときに、どう行動すればよいかを知りたいという知識の質問','本人の気持ち・つらさ・ひとりで困っていることの訴え','それ以外']) LIKE '台風%'),
+  SELECT rid FROM t JOIN `inexus-prod.ise_report.question_labels` l USING (rid) WHERE l.danger = 'danger'
+    AND t.jst >= DATETIME_SUB(CURRENT_DATETIME('Asia/Tokyo'), INTERVAL 24 HOUR)),
 up AS (
   SELECT f.rid start, t.rid cur, t.prev, 0 n FROM flagged f JOIN t USING (rid)
   UNION ALL
@@ -86,9 +83,7 @@ down AS (
   SELECT root, root rid, 0 depth FROM (SELECT DISTINCT root FROM roots)
   UNION ALL
   SELECT d.root, t.rid, d.depth+1 FROM down d JOIN t ON t.prev = d.rid WHERE d.depth < 300),
-story AS (
-  SELECT root, AI.CLASSIFY(qs, ['会話全体が、物語・ごっこ遊び・ゲーム・創作の中の話で、書いた本人が現実のつらさや危険を訴えている部分は無い','書いた本人が、現実に、つらい・危ない・助けがほしいと訴えている部分がある','どちらとも判断できない']) LIKE '会話全体が%' story FROM (
-    SELECT d.root, STRING_AGG(SUBSTR(t.q, 1, 100), '\n' ORDER BY d.depth LIMIT 120) qs FROM down d JOIN t USING (rid) GROUP BY d.root))
+story AS (SELECT root, story FROM `inexus-prod.ise_report.conv_story`)
 SELECT FORMAT_DATETIME('%m/%d %H:%M', t.jst) jst, SUBSTR(t.q, 1, 120) question
 FROM flagged f JOIN t USING (rid) JOIN roots r USING (rid) LEFT JOIN story s ON s.root = r.root
 WHERE NOT IFNULL(s.story, FALSE)
@@ -105,9 +100,8 @@ WITH RECURSIVE t AS (
     FROM `inexus-prod.ise_analytics.run_googleapis_com_stdout`
     WHERE jsonPayload.event='ise_chat' AND DATE(timestamp,'Asia/Tokyo') >= DATE_SUB(CURRENT_DATE('Asia/Tokyo'), INTERVAL 45 DAY)) GROUP BY rid),
 flagged AS (
-  SELECT rid FROM t WHERE jst >= DATETIME_SUB(CURRENT_DATETIME('Asia/Tokyo'), INTERVAL 14 DAY)
-    AND AI.CLASSIFY(q, ['命や身の安全に差し迫った心配がある内容（死にたい・自分を傷つける・虐待や暴力を受けている・身の危険を訴えている）','それ以外']) LIKE '命や身の安全%'
-    AND NOT AI.CLASSIFY(q, ['台風・地震・大雨などの災害や、けが・病気のときに、どう行動すればよいかを知りたいという知識の質問','本人の気持ち・つらさ・ひとりで困っていることの訴え','それ以外']) LIKE '台風%'),
+  SELECT rid FROM t JOIN `inexus-prod.ise_report.question_labels` l USING (rid) WHERE l.danger = 'danger'
+    AND t.jst >= DATETIME_SUB(CURRENT_DATETIME('Asia/Tokyo'), INTERVAL 14 DAY)),
 up AS (
   SELECT f.rid start, t.rid cur, t.prev, 0 n FROM flagged f JOIN t USING (rid)
   UNION ALL
@@ -121,9 +115,7 @@ turns AS (SELECT d.root, d.depth, d.rid, f.rid IS NOT NULL flag FROM down d LEFT
 win AS (SELECT DISTINCT x.root, x.depth, x.rid, x.flag FROM turns x JOIN turns y ON x.root = y.root AND y.flag AND x.depth BETWEEN y.depth - 2 AND y.depth + 1),
 conv AS (SELECT root, COUNT(*) total FROM turns GROUP BY root),
 -- 会話全体が物語・ごっこ遊びか（[watch] と同じ判定。true の会話は Slack へ知らせず、ページに印を付けて載せる）
-story AS (
-  SELECT root, AI.CLASSIFY(qs, ['会話全体が、物語・ごっこ遊び・ゲーム・創作の中の話で、書いた本人が現実のつらさや危険を訴えている部分は無い','書いた本人が、現実に、つらい・危ない・助けがほしいと訴えている部分がある','どちらとも判断できない']) LIKE '会話全体が%' story FROM (
-    SELECT d.root, STRING_AGG(SUBSTR(t.q, 1, 100), '\n' ORDER BY d.depth LIMIT 120) qs FROM down d JOIN t USING (rid) GROUP BY d.root))
+story AS (SELECT root, story FROM `inexus-prod.ise_report.conv_story`)
 SELECT FORMAT_DATETIME('%Y-%m-%d %H:%M', r.jst) conv_start, c.total, w.depth + 1 turn,
   FORMAT_DATETIME('%m/%d %H:%M', t.jst) jst, t.q question, t.a answer, w.flag, IFNULL(s.story, FALSE) story
 FROM win w JOIN t USING (rid) JOIN conv c USING (root) JOIN t r ON r.rid = w.root LEFT JOIN story s ON s.root = w.root

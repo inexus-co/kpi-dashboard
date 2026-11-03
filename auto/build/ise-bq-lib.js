@@ -51,7 +51,7 @@ async function getToken() {
   if (!sa && process.env.CLOUD_RUN_JOB) {
     const r = await new Promise((resolve, reject) => {
       const http = require('http');
-      http.get({ host: 'metadata.google.internal', path: '/computeMetadata/v1/instance/service-account/default/token',
+      http.get({ host: 'metadata.google.internal', path: '/computeMetadata/v1/instance/service-accounts/default/token',
         headers: { 'Metadata-Flavor': 'Google' } }, res => {
         const c = []; res.on('data', d => c.push(d)); res.on('end', () => resolve({ status: res.statusCode, body: Buffer.concat(c).toString() }));
       }).on('error', reject);

@@ -40,6 +40,8 @@ step() {
 
 mkdir -p "$C/ise-q"
 step 分類 node "$B/ise-classify.js"
+# Moderation（2枚目の網の試し・2026-11-04〜 記録だけ）。失敗しても毎朝の処理は止めない。
+node "$B/ise-moderate.js" || echo "WARN Moderation は失敗（毎朝の処理は続ける）"
 step 集計 node "$B/ise-bq-fetch.js" "$C/ise-q"
 step 組み立て node "$B/ise-analysis-assemble.js" "$C/ise-q" "$C/ise_analysis.json"
 step ページ node "$B/build-ise-analysis.js" "$C/ise_analysis.json" "$C/ise-analysis-inner.html" "$(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST')"
